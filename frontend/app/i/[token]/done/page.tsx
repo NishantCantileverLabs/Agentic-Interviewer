@@ -36,7 +36,7 @@ export default function DonePage() {
           {surveyOpen && !sent && (
             <SurveyForm onDone={() => setSent(true)} />
           )}
-          {sent && <p className="mt-5 text-sm text-green">Thanks, feedback noted.</p>}
+          {sent && <p className="mt-5 text-sm text-green">Thanks — feedback noted.</p>}
         </div>
       )}
     </PortalScreen>

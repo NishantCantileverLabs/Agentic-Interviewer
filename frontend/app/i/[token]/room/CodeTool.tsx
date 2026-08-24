@@ -24,7 +24,7 @@ interface Delta {
   text: string;
 }
 
-/** F4. The working surface. Same process-capture contract as Phase 1:
+/** F4 — the working surface. Same process-capture contract as Phase 1:
  * delta batches (500ms), snapshots (30s + on run), paste length, run clicks —
  * batched off the typing path. Yjs doc is live truth; the event log restores
  * it on rejoin. Hidden tests report pass/fail only, never expectations. */
@@ -52,20 +52,6 @@ export function CodeTool({
   const [statementOpen, setStatementOpen] = useState(true);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const deltaBuffer = useRef<Delta[]>([]);
-  const yRef = useRef<{ doc: Y.Doc; provider: WebsocketProvider } | null>(null);
-
-  // Tear the CRDT down when the session changes or the tool unmounts.
-  // Without this the previous round's provider stayed connected and its
-  // Y.Doc alive, so a later round could bind to the earlier session's text.
-  useEffect(() => {
-    return () => {
-      yRef.current?.provider.destroy();
-      yRef.current?.doc.destroy();
-      yRef.current = null;
-      editorRef.current = null;
-      deltaBuffer.current = [];
-    };
-  }, [sessionId]);
 
   useEffect(() => {
     const flushDeltas = setInterval(() => {
@@ -91,12 +77,8 @@ export function CodeTool({
   const onMount: OnMount = useCallback(
     (editor) => {
       editorRef.current = editor;
-      // a remount must not leave the old CRDT connected
-      yRef.current?.provider.destroy();
-      yRef.current?.doc.destroy();
       const doc = new Y.Doc();
       const provider = new WebsocketProvider(YWS_URL, `interview-${sessionId}`, doc);
-      yRef.current = { doc, provider };
       const model = editor.getModel();
       if (model) {
         const ytext = doc.getText("code");
@@ -114,7 +96,7 @@ export function CodeTool({
             const data = (await resp.json()) as { code?: string };
             if (data.code && ytext.length === 0) ytext.insert(0, data.code);
           } catch {
-            /* fresh session. Nothing to restore */
+            /* fresh session — nothing to restore */
           }
         };
         provider.on("sync", () => void restoreIfEmpty());
@@ -248,7 +230,7 @@ export function CodeTool({
                 {result.per_test.map((t) => (
                   <span
                     key={t.id}
-                    title={t.hidden ? "Hidden test: result only" : t.stdout || ""}
+                    title={t.hidden ? "Hidden test — result only" : t.stdout || ""}
                     className={cx(
                       "rounded-full px-2 py-0.5 font-mono text-xs",
                       t.passed ? "bg-panel text-green ring-1 ring-green/30" : "bg-panel text-rust ring-1 ring-rust/30",
@@ -273,7 +255,7 @@ export function CodeTool({
                   return (
                     <div key={t.id} className="rounded-md border border-rust/30 bg-paper p-2">
                       <div className="font-mono text-xs font-semibold text-rust">
-                        {t.id} failed{t.status && t.status !== "wrong_answer" ? `: ${t.status}` : ""}
+                        {t.id} failed{t.status && t.status !== "wrong_answer" ? ` — ${t.status}` : ""}
                       </div>
                       {t.stderr && (
                         <pre className="mt-1 overflow-x-auto font-mono text-xs text-rust">{t.stderr}</pre>
@@ -281,23 +263,23 @@ export function CodeTool({
                       {spec && (
                         <div className="mt-1.5 grid gap-1.5 sm:grid-cols-3">
                           <div>
-                            <div className="font-mono text-xs uppercase tracking-wide text-muted">Input</div>
+                            <div className="font-mono text-[10px] uppercase tracking-wide text-muted">Input</div>
                             <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-ink-soft">{spec.stdin || "(none)"}</pre>
                           </div>
                           <div>
-                            <div className="font-mono text-xs uppercase tracking-wide text-muted">Expected output</div>
+                            <div className="font-mono text-[10px] uppercase tracking-wide text-muted">Expected output</div>
                             <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-green">{spec.expected_output}</pre>
                           </div>
                           <div>
-                            <div className="font-mono text-xs uppercase tracking-wide text-muted">Your output</div>
+                            <div className="font-mono text-[10px] uppercase tracking-wide text-muted">Your output</div>
                             <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-rust">{t.stdout || "(no output)"}</pre>
                           </div>
                         </div>
                       )}
                       {spec && !t.stderr && (t.stdout ?? "").trim() !== spec.expected_output.trim() && (t.stdout ?? "").includes(spec.expected_output.trim()) && (
                         <p className="mt-1 text-xs text-muted">
-                          The expected value is in your output, but with extra text around it.
-                          Print only the answer (e.g. input() prompts also count as output).
+                          The expected value is in your output, but with extra text around it —
+                          print only the answer (e.g. input() prompts also count as output).
                         </p>
                       )}
                     </div>

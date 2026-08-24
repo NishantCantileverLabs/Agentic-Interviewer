@@ -125,7 +125,7 @@ export async function execute(
       test_suite_id: testSuiteId ?? null,
     }),
   });
-  if (resp.status === 429) throw new Error("A run is already in progress. Wait a moment.");
+  if (resp.status === 429) throw new Error("A run is already in progress — wait a moment.");
   return (await check(resp)).json();
 }
 

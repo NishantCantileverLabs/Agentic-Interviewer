@@ -29,10 +29,10 @@ import {
   submitDecision,
 } from "../../../../lib/org";
 
-/** R9. Session view: Brief | Replay | Evaluation, plus the review-mode
+/** R9 — session view: Brief | Replay | Evaluation, plus the review-mode
  * decision panel (F8). Replay synchronizes transcript, reconstructed code,
  * and the event rail over the event-log timeline. (This deployment records
- * no audio, so the scrubber is time-based rather than waveform-based. The
+ * no audio, so the scrubber is time-based rather than waveform-based — the
  * two-click promise from evidence to moment is unchanged.) */
 export default function SessionViewPage() {
   return (
@@ -113,7 +113,7 @@ function SessionViewInner() {
           {tab === "replay" &&
             (events === null ? (
               <p className="mt-4 text-muted" aria-busy="true">
-                Loading the event stream. Long sessions take a few seconds.
+                Loading the event stream — long sessions take a few seconds.
               </p>
             ) : events.length === 0 ? (
               <p className="mt-4 text-muted">No events recorded for this session.</p>
@@ -346,7 +346,7 @@ function ReplayPane({
             code at {fmtClock(playhead)}
           </div>
           <pre className="p-3 font-mono text-xs leading-relaxed text-ink">
-            {code || "(no code at this point)"}
+            {code || "— no code at this point —"}
           </pre>
         </div>
       </div>
@@ -368,9 +368,7 @@ function EvaluationPane({
   if (missing) {
     return (
       <p className="mt-4 text-muted">
-        No evaluation yet. It runs automatically when the interview completes.
-        If this session finished a while ago, the evaluation may have failed:
-        check eval health in Analytics, then re-run it.
+        No evaluation yet — it runs automatically when the interview completes.
       </p>
     );
   }
@@ -384,12 +382,7 @@ function EvaluationPane({
         model {evaluation.model} · v{evaluation.version} ·{" "}
         {new Date(evaluation.created_at).toLocaleString()}
         {evaluation.rubric.degraded && (
-          <span className="ml-2 text-rust">
-            degraded: scores need human review
-            {evaluation.rubric.degraded_reason
-              ? ` (${String(evaluation.rubric.degraded_reason)})`
-              : ""}
-          </span>
+          <span className="ml-2 text-rust">degraded — scores need human review</span>
         )}
       </p>
       {comps.length === 0 && <p className="text-muted">The rubric holds no competencies.</p>}
@@ -469,8 +462,8 @@ function DecisionPanel({ sessionId }: { sessionId: string }) {
         {item ? (
           <>
             <p className="mt-2 text-sm text-ink-soft">
-              <span className="font-mono text-xs uppercase text-violet">{item.inflow}</span>:{" "}
-              {item.reason}
+              <span className="font-mono text-xs uppercase text-violet">{item.inflow}</span>{" "}
+              — {item.reason}
             </p>
             {item.signal && (
               <p className="mt-1 font-mono text-xs text-muted">AI signal: {item.signal}</p>

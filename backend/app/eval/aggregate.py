@@ -111,12 +111,7 @@ async def consistency_pass(
     if len(sessions) < 2:
         return []
     from app.config import get_settings
-    from app.eval.pipeline import (
-        _log_llm_call,
-        _parse_json_object,
-        _prompt_version,
-        build_transcript,
-    )
+    from app.eval.pipeline import _parse_json_object, build_transcript
     from providers import ContextBlock, LLMRequest, get_provider
 
     valid_ids: dict[str, set[int]] = {}
@@ -136,20 +131,24 @@ async def consistency_pass(
             + build_transcript(events)[:6000]
         )
 
-    # invariant #2: the prompt lives in /prompts (versioned) and the call is
-    # logged to llm_calls — it was previously inlined and unlogged
+    prompt = (
+        "You compare a candidate's rounds for consistency. Output STRICT JSON: "
+        '{"claims": [{"kind": "consistent"|"tension", "statement": "...", '
+        '"citations": {"<session_id>": [<event ids>], "<session_id>": [<event ids>]}}]}. '
+        "Every claim MUST cite at least one event id from EVERY session it references, "
+        "using only ids present in the transcripts. 0-4 claims. Neutral, observational "
+        "language only.\n\n" + "\n\n".join(excerpts)
+    )
     try:
-        pv = _prompt_version(db, "evaluate/consistency_v1")
         provider = get_provider()
         result = await provider.complete(
             LLMRequest(
                 model=get_settings().eval_model,
-                system_blocks=[ContextBlock(pv.content, cached=True)],
-                messages=[{"role": "user", "content": "\n\n".join(excerpts)}],
+                system_blocks=[ContextBlock("You are a rigorous cross-round analyst.")],
+                messages=[{"role": "user", "content": prompt}],
                 max_tokens=1500,
             )
         )
-        _log_llm_call(db, sessions[0].id, sessions[0].org_id, pv, result)
         claims = _parse_json_object(result.text).get("claims", [])
     except Exception as exc:  # noqa: BLE001 - aggregation must not fail the pipeline
         log.warning("consistency pass failed: %s", exc)

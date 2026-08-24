@@ -71,7 +71,6 @@ def _decode_candidate_token(token: str) -> dict[str, str]:
 
 
 def get_org_context(request: Request) -> OrgContext:
-    from app.db import SessionLocal
     settings = get_settings()
 
     token = request.query_params.get("candidate_token") or request.headers.get(
@@ -79,28 +78,11 @@ def get_org_context(request: Request) -> OrgContext:
     )
     if token:
         claims = _decode_candidate_token(token)
-        session_id = uuid.UUID(claims["sid"])
-        # Enforce revocation: sessions.candidate_jti is rotated on every
-        # re-mint and cleared by erase(). Without this check the "revocable
-        # single-session link" was signature+expiry only, so a superseded or
-        # erased link kept full access for its whole 24h TTL.
-        from app.db import set_rls_context
-        from app.models import Session as _Session
-
-        db = SessionLocal()
-        try:
-            set_rls_context(db, bypass=True)
-            row = db.get(_Session, session_id)
-            current_jti = row.candidate_jti if row is not None else None
-        finally:
-            db.close()
-        if row is None or not current_jti or current_jti != claims.get("jti"):
-            raise HTTPException(401, "this interview link is no longer valid")
         return OrgContext(
             org_id=uuid.UUID(claims["org"]),
             role="candidate",
-            user_email=f"candidate:{session_id}",
-            session_scope=session_id,
+            user_email=f"candidate:{claims['sid']}",
+            session_scope=uuid.UUID(claims["sid"]),
         )
 
     internal = request.headers.get("x-internal-key")

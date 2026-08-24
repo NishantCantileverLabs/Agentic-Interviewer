@@ -146,14 +146,14 @@ export default function LoginPage() {
           </p>
           <ol className="mt-4 flex flex-col gap-5 border-l border-line pl-5">
             <li className="relative">
-              <span aria-hidden className="absolute -left-7 top-1.5 h-2 w-2 rounded-full bg-accent ring-4 ring-panel" />
+              <span aria-hidden className="absolute -left-[23px] top-1.5 h-2 w-2 rounded-full bg-accent" />
               <div className="font-display text-md font-semibold text-ink">Recruiters</div>
               <p className="mt-0.5 text-sm leading-relaxed text-muted">
                 Your hiring console.
               </p>
             </li>
             <li className="relative">
-              <span aria-hidden className="absolute -left-7 top-1.5 h-2 w-2 rounded-full bg-ink ring-4 ring-panel" />
+              <span aria-hidden className="absolute -left-[23px] top-1.5 h-2 w-2 rounded-full bg-ink" />
               <div className="font-display text-md font-semibold text-ink">Candidates</div>
               <p className="mt-0.5 text-sm leading-relaxed text-muted">
                 Your interviews, one press to join.
@@ -272,7 +272,7 @@ export default function LoginPage() {
                 </p>
                 {devOtp && (
                   <p className="rounded-md border border-amber/40 bg-panel p-2.5 text-sm text-amber">
-                    Development mode (no email provider configured). Your code is{" "}
+                    Development mode (no email provider configured) — your code is{" "}
                     <b className="font-mono">{devOtp}</b>
                   </p>
                 )}
@@ -332,7 +332,7 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-8 text-sm text-muted">
-            Invited to interview? You don&apos;t need an account. Use the personal link
+            Invited to interview? You don&apos;t need an account — use the personal link
             from your invitation email.
           </p>
         </div>

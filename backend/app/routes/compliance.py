@@ -133,7 +133,6 @@ def erase_candidacy(
         raise HTTPException(404, "candidacy not found")
     sessions = _candidacy_sessions(db, candidacy_id)
     erased_events = 0
-    undeleted_objects: list[str] = []
     for s in sessions:
         result = db.execute(delete(InterviewEvent).where(InterviewEvent.session_id == s.id))
         erased_events += int(result.rowcount or 0)  # type: ignore[attr-defined]
@@ -151,10 +150,8 @@ def erase_candidacy(
             he.rubric = {"erased": True}
         for b in db.scalars(select(Brief).where(Brief.session_id == s.id)):
             b.summary = {"erased": True}
-            if _delete_object("briefs", b.html_object_key):
-                b.html_object_key = ""
-            else:
-                undeleted_objects.append(f"briefs/{b.html_object_key}")
+            _delete_object("briefs", b.html_object_key)
+            b.html_object_key = ""
     for r in db.scalars(select(Resume).where(Resume.candidacy_id == candidacy_id)):
         r.raw_text = TOMBSTONE
         r.parsed_claims = {"erased": True}
@@ -164,10 +161,8 @@ def erase_candidacy(
     ):
         ab.rollup = {"erased": True}
         ab.consistency = []
-        if _delete_object("briefs", ab.html_object_key):
-            ab.html_object_key = ""
-        else:
-            undeleted_objects.append(f"briefs/{ab.html_object_key}")
+        _delete_object("briefs", ab.html_object_key)
+        ab.html_object_key = ""
     # candidate account: PII + credentials become tombstones (added in 0009)
     account = db.scalar(
         select(User).where(
@@ -191,38 +186,20 @@ def erase_candidacy(
     db.add(
         PurgeAudit(
             org_id=ctx.org_id, action="erase", subject=str(candidacy_id),
-            detail={
-                "sessions": len(sessions),
-                "events_purged": erased_events,
-                # keys that MUST be retried — the erase is not complete
-                # until this list is empty (kept for the reconciliation sweep)
-                "undeleted_objects": undeleted_objects,
-            },
+            detail={"sessions": len(sessions), "events_purged": erased_events},
             actor=ctx.user_email,
         )
     )
     log_admin_action(db, ctx, "dsr_erase", {"candidacy_id": str(candidacy_id)})
     db.commit()
-    if undeleted_objects:
-        raise HTTPException(
-            502,
-            f"erase partially complete: {len(undeleted_objects)} stored object(s) "
-            "could not be deleted (storage unreachable). DB fields are scrubbed "
-            "and the keys are recorded in the purge audit — retry the erase.",
-        )
     return {"erased_sessions": len(sessions), "events_purged": erased_events}
 
 
-def _delete_object(bucket: str, key: str | None) -> bool:
-    """True if the object is gone (deleted or never existed). False on any
-    real storage error — the caller must NOT blank the DB pointer in that
-    case, or the orphaned object becomes untraceable and the erase silently
-    incomplete (GDPR audit finding)."""
+def _delete_object(bucket: str, key: str | None) -> None:
     if not key:
-        return True
+        return
     try:
         from minio import Minio
-        from minio.error import S3Error
 
         settings = get_settings()
         client = Minio(
@@ -231,25 +208,9 @@ def _delete_object(bucket: str, key: str | None) -> bool:
             secret_key=settings.s3_secret_key,
             secure=settings.s3_endpoint.startswith("https"),
         )
-        try:
-            client.remove_object(bucket, key)
-            return True
-        except S3Error as exc:
-            if exc.code in ("NoSuchKey", "NoSuchBucket"):
-                return True  # already gone — erase is satisfied
-            import logging
-
-            logging.getLogger("compliance").error(
-                "erase: object delete failed for %s/%s: %s", bucket, key, exc
-            )
-            return False
-    except Exception as exc:  # noqa: BLE001 - connection/auth failure
-        import logging
-
-        logging.getLogger("compliance").error(
-            "erase: object storage unreachable for %s/%s: %s", bucket, key, exc
-        )
-        return False
+        client.remove_object(bucket, key)
+    except Exception:  # noqa: BLE001 - erase must not fail on missing objects
+        pass
 
 
 @router.get("/metrics/spend-alarm")

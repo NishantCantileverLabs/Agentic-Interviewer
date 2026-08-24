@@ -51,7 +51,7 @@ export default function CandidaciesPage() {
     });
     if (!r.ok) return setMsg(await r.text());
     const data = await r.json();
-    setMsg(`Invited. Portal link: ${data.invite_link} (email ${data.email_sent ? "sent" : "logged, no RESEND_API_KEY"})`);
+    setMsg(`Invited. Portal link: ${data.invite_link} (email ${data.email_sent ? "sent" : "logged — no RESEND_API_KEY"})`);
     setName(""); setEmail("");
     void load();
   };
@@ -75,7 +75,7 @@ export default function CandidaciesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot_start: new Date(slot).toISOString() }),
     });
-    setMsg(r.ok ? "Interview scheduled. The candidate sees it on their home page." : await r.text());
+    setMsg(r.ok ? "Interview scheduled — the candidate sees it on their home page." : await r.text());
     void load();
   };
 
@@ -122,7 +122,7 @@ export default function CandidaciesPage() {
           <tbody>
             {rows.length === 0 && (
               <tr><td colSpan={5} style={{ color: "var(--faint)" }}>
-                No candidates yet. Send your first invite above.
+                No candidates yet — send your first invite above.
               </td></tr>
             )}
             {rows.map((c) => (
@@ -150,7 +150,7 @@ export default function CandidaciesPage() {
                       })}
                     </span>
                   ) : ["completed", "withdrawn", "in_progress"].includes(c.status) ? (
-                    <span style={{ color: "var(--faint)", fontSize: 13 }}>-</span>
+                    <span style={{ color: "var(--faint)", fontSize: 13 }}>—</span>
                   ) : (
                     <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input type="datetime-local" className="notes"

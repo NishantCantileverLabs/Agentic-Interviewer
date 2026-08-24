@@ -11,11 +11,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 _settings = get_settings()
-# ConfigParser treats % as interpolation — a password containing one would
-# crash alembic unless escaped
 config.set_main_option(
-    "sqlalchemy.url",
-    (_settings.migrations_database_url or _settings.database_url).replace("%", "%%"),
+    "sqlalchemy.url", _settings.migrations_database_url or _settings.database_url
 )
 
 target_metadata = Base.metadata

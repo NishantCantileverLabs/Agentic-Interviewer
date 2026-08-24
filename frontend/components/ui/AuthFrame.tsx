@@ -10,7 +10,7 @@ export function AuthFrame({
   url,
   title,
   className,
-  pendingText = "Not ready yet. This fills in when the document is generated.",
+  pendingText = "Not ready yet — this fills in when the document is generated.",
 }: {
   url: string;
   title: string;
@@ -53,7 +53,7 @@ export function AuthFrame({
     return (
       <div className={className}>
         <div className="flex h-full items-center justify-center rounded-lg border border-line bg-panel p-4 text-center text-sm text-muted">
-          Your account does not have access to this document. Log in with an org
+          Your account does not have access to this document — log in with an org
           account.
         </div>
       </div>

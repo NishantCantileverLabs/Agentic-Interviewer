@@ -102,7 +102,7 @@ function CompareInner() {
                   {[ca, cb].map((c, i) => (
                     <td key={i} className="px-4 py-3">
                       <span className="font-display text-lg font-semibold text-ink">
-                        {typeof c?.score_1_to_5 === "number" ? `${c.score_1_to_5}/5` : "-"}
+                        {typeof c?.score_1_to_5 === "number" ? `${c.score_1_to_5}/5` : "—"}
                       </span>
                       {c?.evidence?.[0]?.quote && (
                         <p className="mt-1 max-w-72 text-sm text-muted">

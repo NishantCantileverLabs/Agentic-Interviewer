@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { LiveKitRoom } from "@livekit/components-react";
@@ -29,7 +29,7 @@ function Statement({ question }: { question: QuestionView | null }) {
     return (
       <div className="panel statement">
         <span className="console-hint">
-          No coding question assigned to this session&apos;s plan yet. Run the seed script.
+          No coding question assigned to this session&apos;s plan yet — run the seed script.
         </span>
       </div>
     );
@@ -72,10 +72,7 @@ export default function InterviewPage() {
     else setError(`could not read ${file.name}`);
   };
 
-  const startGuard = useRef(false);
   const start = useCallback(async () => {
-    if (startGuard.current) return;
-    startGuard.current = true;
     setStarting(true);
     setError(null);
     try {
@@ -98,7 +95,6 @@ export default function InterviewPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setStarting(false);
-      startGuard.current = false;
     }
   }, []);
 
@@ -130,20 +126,13 @@ export default function InterviewPage() {
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
 
-  const reconnectingRef = useRef(false);
   const reconnectVoice = useCallback(async () => {
-    if (!sessionId || reconnectingRef.current) return;
-    reconnectingRef.current = true;
+    if (!sessionId) return;
+    setCreds(null);
     try {
-      // Fetch first, then swap — the old teardown (setCreds(null)) used to
-      // unmount LiveKitRoom before the new token arrived, creating a window
-      // where StrictMode or a second click could issue a duplicate dispatch.
-      const next = await getToken(sessionId);
-      setCreds(next);
+      setCreds(await getToken(sessionId));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      reconnectingRef.current = false;
     }
   }, [sessionId]);
 
@@ -161,7 +150,7 @@ export default function InterviewPage() {
           </p>
           {assigned ? (
             <p style={{ color: "#3fb950" }}>
-              ✓ Your interview has been set up for you. Just press start.
+              ✓ Your interview has been set up for you — just press start.
             </p>
           ) : (
             <div style={{ textAlign: "left", margin: "8px 0" }}>
@@ -177,7 +166,7 @@ export default function InterviewPage() {
                   </label>
                   <textarea className="notes doc-area" value={resumeText}
                     onChange={(e) => setResumeText(e.target.value)}
-                    placeholder="Paste your resume. The interviewer will ask about your actual experience." />
+                    placeholder="Paste your resume — the interviewer will ask about your actual experience." />
                 </div>
               )}
             </div>
@@ -274,7 +263,7 @@ export default function InterviewPage() {
             <div className="panel statement" style={{ flex: 1 }}>
               <h2>Conversation round</h2>
               <p style={{ color: "#8b949e" }}>
-                No tools needed here, just talk with the interviewer.
+                No tools needed here — just talk with the interviewer.
               </p>
             </div>
           )}

@@ -25,18 +25,12 @@ async def extract_text(
 
     if name.endswith(".pdf") or raw[:5] == b"%PDF-":
         try:
-            import asyncio
             import io
 
             from pypdf import PdfReader
 
-            def _extract(data: bytes) -> str:
-                reader = PdfReader(io.BytesIO(data))
-                return "\n".join(page.extract_text() or "" for page in reader.pages)
-
-            # CPU-bound parsing off the event loop: a complex 5MB PDF would
-            # otherwise stall every in-flight request, including live rooms
-            text = await asyncio.to_thread(_extract, raw)
+            reader = PdfReader(io.BytesIO(raw))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
         except Exception as exc:  # noqa: BLE001 - surface as a clean 422
             raise HTTPException(422, f"could not read PDF: {exc}") from None
     else:

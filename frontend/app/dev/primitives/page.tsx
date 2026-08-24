@@ -49,7 +49,7 @@ function ToastDemo() {
       <Button variant="secondary" onClick={() => toast("Invite sent", "success")}>
         Success toast
       </Button>
-      <Button variant="secondary" onClick={() => toast("Could not reach the server. Retry in a moment", "error")}>
+      <Button variant="secondary" onClick={() => toast("Could not reach the server — retry in a moment", "error")}>
         Error toast
       </Button>
       <Button variant="secondary" onClick={() => toast("Reminder scheduled")}>
@@ -71,7 +71,7 @@ export default function PrimitivesPage() {
         <header>
           <h1 className="font-display text-2xl font-semibold text-ink">Primitives</h1>
           <p className="mt-1 text-muted">
-            Every primitive in every state. The F0 reference page. Tokens per DESIGN.md.
+            Every primitive in every state — the F0 reference page. Tokens per DESIGN.md.
           </p>
         </header>
 
@@ -86,7 +86,7 @@ export default function PrimitivesPage() {
           <Button size="sm">Small</Button>
         </Section>
 
-        <Section title="StatusChip: all 9 §7 statuses">
+        <Section title="StatusChip — all 9 §7 statuses">
           {ALL_STATUSES.map((s) => (
             <StatusChip key={s} status={s} />
           ))}
@@ -185,7 +185,7 @@ export default function PrimitivesPage() {
                 columns={[{ key: "name", header: "Candidate", render: (r) => r.name }]}
                 rows={[]}
                 rowKey={(r) => r.name}
-                empty={<span>No candidates yet. Send your first invite.</span>}
+                empty={<span>No candidates yet — send your first invite.</span>}
               />
             </div>
           </div>

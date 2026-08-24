@@ -11,8 +11,7 @@ class SessionCreate(BaseModel):
     candidate_label: str
     role_config_id: uuid.UUID | None = None
     plan_id: uuid.UUID | None = None
-    # None -> the deployment's RETENTION_DAYS_DEFAULT
-    retention_days: int | None = None
+    retention_days: int = 90
     jd_text: str | None = None
     resume_text: str | None = None
 

@@ -1,8 +1,7 @@
 """T11 — candidacies, invites, scheduling, consent (the legal load-bearing flow).
 
-Consent gate (invariant #12) is enforced by consent_missing() in this module,
-called from the session status transition (routes/sessions.py) and the
-start-interview path — API-level, not UI-level.
+Consent gate (invariant #12) is enforced in app.consent.check_consent_gate,
+called from the session status transition — API-level, not UI-level.
 """
 
 import uuid
@@ -11,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
@@ -35,9 +34,6 @@ from app.tenancy import (
 )
 
 router = APIRouter()
-
-# candidacy states that must never start another interview
-_TERMINAL_CANDIDACY_STATUSES = ("completed", "in_review", "reviewed", "withdrawn")
 
 DEFAULT_POLICIES = {
     "audio_processing": (
@@ -127,28 +123,22 @@ def list_candidacies(
     }
     # which candidacies have a decision brief (distinguishes "processing"
     # from "brief ready" in the §7 chip without a per-row roundtrip)
-    _cand_ids_for_briefs = [c.id for c in rows]
     briefed = {
         row[0]
         for row in db.execute(
             select(Session.candidacy_id)
             .join(Brief, Brief.session_id == Session.id)
-            .where(Session.candidacy_id.in_(_cand_ids_for_briefs))
+            .where(Session.candidacy_id.is_not(None))
             .distinct()
         ).all()
-    } if _cand_ids_for_briefs else set()
-    # latest session per candidacy (session-view link for R5/R6). Two columns
-    # for the listed candidacies only — loading every full Session ORM row
-    # (incl. jd_text/resume_text) unbounded was the audit finding.
-    cand_ids = [c.id for c in rows]
+    }
+    # latest completed session per candidacy (session-view link for R5/R6)
     latest_session: dict[uuid.UUID, str] = {}
-    if cand_ids:
-        for cid, sid in db.execute(
-            select(Session.candidacy_id, Session.id)
-            .where(Session.candidacy_id.in_(cand_ids))
-            .order_by(Session.created_at)
-        ).all():
-            latest_session[cid] = str(sid)
+    for s in db.scalars(
+        select(Session).where(Session.candidacy_id.is_not(None)).order_by(Session.created_at)
+    ):
+        if s.candidacy_id is not None:
+            latest_session[s.candidacy_id] = str(s.id)
     return [
         {
             "id": str(c.id),
@@ -184,10 +174,7 @@ def get_candidacy(
         for p in db.scalars(select(PolicyVersion).where(PolicyVersion.version == version))
     }
     consents = db.scalars(
-        # ordered so the dict comprehension below is latest-wins per item
-        select(ConsentRecord)
-        .where(ConsentRecord.candidacy_id == candidacy_id)
-        .order_by(ConsentRecord.ts)
+        select(ConsentRecord).where(ConsentRecord.candidacy_id == candidacy_id)
     )
     from app.models_phase23 import JobRole
 
@@ -252,13 +239,7 @@ def schedule_slot(
 
     slot_end = body.slot_start + timedelta(minutes=60)
 
-    # Org concurrency cap (the infra cost throttle). Serialized per org:
-    # count-then-insert under concurrency would let two bookings both pass
-    # a full window's check.
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
-        {"k": f"schedule:{c.org_id}"},
-    )
+    # Org concurrency cap (the infra cost throttle)
     org = db.get(Org, c.org_id)
     org_settings = (org.settings if org else None) or {}
     cap = int(
@@ -338,24 +319,18 @@ def record_consent(
 
 
 def consent_missing(db: DbSession, candidacy_id: uuid.UUID) -> list[str]:
-    """Required items not granted under the CURRENT policy version.
-
-    Latest record wins per item: a candidate who granted and later withdrew
-    (granted=False) counts as NOT granted — anything else makes revocation
-    a no-op."""
+    """Required items not granted under the CURRENT policy version."""
     version = get_settings().consent_policy_version
-    rows = db.execute(
-        select(ConsentRecord.item, ConsentRecord.granted)
-        .where(
-            ConsentRecord.candidacy_id == candidacy_id,
-            ConsentRecord.policy_version == version,
+    granted_items = set(
+        db.scalars(
+            select(ConsentRecord.item).where(
+                ConsentRecord.candidacy_id == candidacy_id,
+                ConsentRecord.granted.is_(True),
+                ConsentRecord.policy_version == version,
+            )
         )
-        .order_by(ConsentRecord.ts)
-    ).all()
-    latest: dict[str, bool] = {}
-    for item, granted in rows:
-        latest[item] = granted
-    return [i for i in REQUIRED_CONSENT_ITEMS if not latest.get(i, False)]
+    )
+    return [i for i in REQUIRED_CONSENT_ITEMS if i not in granted_items]
 
 
 @router.post("/candidacies/{candidacy_id}/decline")
@@ -464,32 +439,12 @@ def start_interview(
             403, f"required consent not granted under current policy: {missing}"
         )
 
-    if c.status in _TERMINAL_CANDIDACY_STATUSES:
-        # a finished candidacy does not spawn fresh interviews: the invite
-        # link is the only credential here, so without this check anyone
-        # holding it could re-open interviewing after completion
-        raise HTTPException(
-            409, f"this interview is already {c.status} and cannot be restarted"
-        )
-    # Serialize concurrent starts for this candidacy (double-click, portal
-    # retry): the check-then-create below is only idempotent under a lock.
-    # Advisory xact lock releases automatically at commit/rollback.
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
-        {"key": f"start-interview:{c.id}"},
-    )
     # Idempotent: an in-flight session (any round) means "rejoin", not "start
     # another". Re-mint the candidate link (jti rotation revokes the old one)
     # and hand back the same room — a reload or dropped tab never dead-ends.
-    # NOTE "in_progress", not "active": the agent sets in_progress, and the
-    # old filter's phantom status meant a reload mid-interview spawned a
-    # SECOND session instead of rejoining.
     live = db.scalars(
         select(Session)
-        .where(
-            Session.candidacy_id == c.id,
-            Session.status.in_(("created", "in_progress", "paused")),
-        )
+        .where(Session.candidacy_id == c.id, Session.status.in_(("created", "active")))
         .order_by(Session.created_at.desc())
         .limit(1)
     ).first()

@@ -56,61 +56,7 @@ from latency import LatencyTracker
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 log = logging.getLogger("interview-agent")
 
-
-def _validate_agent_posture() -> None:
-    """Mirror of backend app.config.validate_production_posture for the agent
-    process: in production, refuse to run on dev credentials instead of
-    silently authenticating with them."""
-    if os.environ.get("ENVIRONMENT", "dev").strip().lower() not in ("production", "prod"):
-        return
-    problems = []
-    if os.environ.get("INTERNAL_API_KEY", "dev-internal-key") == "dev-internal-key":
-        problems.append("INTERNAL_API_KEY: still the dev default")
-    if os.environ.get("LIVEKIT_API_KEY", "devkey") == "devkey":
-        problems.append("LIVEKIT_API_KEY: still the dev default")
-    if os.environ.get("LIVEKIT_API_SECRET", "secret") == "secret":
-        problems.append("LIVEKIT_API_SECRET: still the dev default")
-    if "localhost" in os.environ.get("BACKEND_URL", "http://localhost:8000"):
-        problems.append("BACKEND_URL: still points at localhost")
-    if problems:
-        raise RuntimeError(
-            "agent refusing to start in production posture — fix these first:\n"
-            + "\n".join(f"  x {p}" for p in problems)
-        )
-
-
-_validate_agent_posture()
-
 PROMPTS_DIR = pathlib.Path(__file__).parent.parent / "prompts" / "conduct"
-
-# Preemptive ("speculative") generation starts the conduct LLM on the interim
-# transcript, before the turn commits. It cannot help THIS agent, and the
-# reason is structural rather than tunable:
-#
-#   1. LiveKit builds the speculative call from the interim transcript plus
-#      the chat context AS IT STANDS - our on_user_turn_completed hook has
-#      not run yet, so the call carries no <engine_directive>: no editor
-#      observation, no hint policy, no math verdict.
-#   2. When the turn commits, the hook appends that directive to the user
-#      message, so LiveKit's guard (_transcripts_equivalent against
-#      raw_text_content, agent_activity.py) sees a changed message and
-#      discards the speculative work.
-#
-# Measured across real interview sessions: 68 invalidations, 0 uses - one
-# wasted conduct-LLM call per turn for zero latency benefit. (The T1 spike
-# agent, which injects no per-turn directive, does use it - which is why the
-# option looked worthwhile originally.)
-#
-# Making the guard pass would trade correctness for that latency: the reply
-# would be generated without the candidate's editor content or the hint
-# policy. So this stays OFF, and the env var is opt-in with a loud warning.
-_SPECULATIVE_GENERATION = os.environ.get("SPECULATIVE_GENERATION", "false").lower() == "true"
-if _SPECULATIVE_GENERATION:
-    logging.getLogger("interview-agent").warning(
-        "SPECULATIVE_GENERATION=true: every turn injects a per-turn engine "
-        "directive, so LiveKit will invalidate each speculative generation - "
-        "expect a wasted conduct-LLM call per turn and no latency gain"
-    )
 CONDUCT_MODEL = os.environ.get("CONDUCT_MODEL", "claude-haiku-4-5")
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic")
 TTS_PRIMARY = os.environ.get("TTS_PRIMARY", "deepgram")
@@ -277,10 +223,6 @@ class InterviewConductor(Agent):
         self.transcript_text = ""  # rolling candidate transcript (coverage checks)
         self.canvas_labels: list[str] = []
         self.scratchpad_text = ""
-        # Serialize generate_reply callers (transition_loop twist/nudge vs.
-        # LLM turn vs. initial greeting) — concurrent calls produce two TTS
-        # streams the candidate hears as two voices.
-        self._reply_lock = asyncio.Lock()
         # v2 adds the guardrails: no invented documents, structure stays
         # confidential, strict interview-only scope, no solution walkthroughs
         self.base_prompt = (PROMPTS_DIR / "base_v2.txt").read_text(encoding="utf-8")
@@ -392,11 +334,10 @@ class InterviewConductor(Agent):
         self.latest_observation = None  # fresh observation window per round
         await self.update_instructions(self._instructions_for(round_id))
         hint = self._round_def(round_id).transition_hint
-        async with self._reply_lock:
-            await session.generate_reply(
-                instructions=f"You are now in the '{round_id}' round. Transition naturally in one "
-                f"or two spoken sentences. {hint}"
-            )
+        await session.generate_reply(
+            instructions=f"You are now in the '{round_id}' round. Transition naturally in one "
+            f"or two spoken sentences. {hint}"
+        )
 
     # ── pipeline hooks ───────────────────────────────────────────────
 
@@ -483,62 +424,6 @@ async def interview_session(ctx: agents.JobContext) -> None:
     backend = BackendClient()
     tracker = LatencyTracker()
 
-    # ── double-voice guard: at most one agent per session (redis lock) ─
-    # A reconnect token that still carries a dispatch, or a StrictMode
-    # double-mount, would otherwise spawn a second Job in the same room;
-    # the candidate then hears two TTS streams. The DB flag in
-    # issue_room_token prevents most dispatches; this lock is the
-    # definitive in-room guard and also handles the crash-recovery window.
-    _agent_lock_key: str | None = f"agent:session:{session_id}" if session_id else None
-    _agent_lock_r = None
-    _agent_lock_held = False
-    if _agent_lock_key:
-        try:
-            import redis as _redis
-
-            _agent_lock_r = _redis.Redis.from_url(
-                os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
-                socket_timeout=2,
-                socket_connect_timeout=2,
-            )
-            # NX = only the first agent for this session acquires; ex keeps
-            # crash-recovery possible (lock expires after the interview).
-            if not _agent_lock_r.set(_agent_lock_key, "1", nx=True, ex=1800):
-                # Give the room a moment to sync remote_participants so we
-                # can distinguish "lock held by live agent" vs stale lock.
-                await asyncio.sleep(0.6)
-                has_other = any(
-                    p.identity != f"candidate-{session_id}"
-                    for p in ctx.room.remote_participants.values()
-                )
-                # If the room already has a non-candidate participant, the
-                # lock is genuinely held by a live agent — refuse this job.
-                # Otherwise the lock is stale (crashed agent without cleanup)
-                # and we steal it so the candidate is not stranded without voice.
-                if has_other or len(ctx.room.remote_participants) > 0:
-                    log.warning(
-                        "duplicate agent for session %s - lock held and room occupied, shutting down",  # noqa: E501
-                        session_id,
-                    )
-                    try:
-                        _agent_lock_r.close()
-                    except Exception:
-                        pass
-                    await backend.close()
-                    ctx.shutdown(reason="duplicate agent - session already has an interviewer")
-                    return
-                # Stale lock — reclaim
-                _agent_lock_r.delete(_agent_lock_key)
-                _agent_lock_r.set(_agent_lock_key, "1", nx=True, ex=1800)
-                _agent_lock_held = True
-            else:
-                _agent_lock_held = True
-        except Exception as exc:
-            log.warning(  # noqa: E501
-                "agent lock check failed for %s: %s - proceeding without lock", session_id, exc
-            )
-            _agent_lock_held = False
-
     plan_data = DEFAULT_PLAN
     round_meta: dict[str, dict] = {}
     initial = EngineState()
@@ -549,38 +434,13 @@ async def interview_session(ctx: agents.JobContext) -> None:
 
     if session_id:
         sink = EventSink(session_id)
-        # One parallel burst instead of four sequential round-trips. A None
-        # session_row means the FETCH failed (the room only exists for a real
-        # session) — retry, then refuse the job rather than conducting the
-        # DEFAULT_PLAN against a real session and polluting its event log
-        # with a spurious fresh-start transition.
-        session_row = bundle = questions = None
-        history: list[dict] = []
-        for attempt in range(3):
-            session_row, bundle, questions, history = await asyncio.gather(
-                backend.get_json(f"/sessions/{session_id}"),
-                backend.get_json(f"/sessions/{session_id}/plan"),
-                backend.get_json(f"/sessions/{session_id}/round-content"),
-                backend.replay(session_id),
-            )
-            if session_row is not None:
-                break
-            log.warning("bootstrap fetch failed (attempt %d/3); backing off", attempt + 1)
-            await asyncio.sleep(2 * (attempt + 1))
-        if session_row is None:
-            await backend.close()
-            raise RuntimeError(
-                f"backend unreachable during bootstrap for session {session_id} — "
-                "refusing to conduct a default-plan interview against a real session"
-            )
-        if session_row.get("status") in ("completed", "aborted"):
-            # a finished interview never resurrects: without this, re-entering
-            # the room re-dispatched the agent, which rebuilt the old
-            # transcript and "resumed" the ended conversation
-            log.info("session %s already %s - refusing dispatch", session_id, session_row["status"])
-            await backend.close()
-            ctx.shutdown(reason="session already ended")
-            return
+        # One parallel burst instead of four sequential round-trips
+        session_row, bundle, questions, history = await asyncio.gather(
+            backend.get_json(f"/sessions/{session_id}"),
+            backend.get_json(f"/sessions/{session_id}/plan"),
+            backend.get_json(f"/sessions/{session_id}/round-content"),
+            backend.replay(session_id),
+        )
         if session_row:
             jd_text = session_row.get("jd_text")
             resume_text = session_row.get("resume_text")
@@ -590,11 +450,6 @@ async def interview_session(ctx: agents.JobContext) -> None:
         if questions:
             round_meta = questions  # /round-content: per-round statement/hints/pack/etc.
         initial = rebuild(history, InterviewPlan.from_json(plan_data))
-        if initial.round_id == ENDED:
-            log.info("session %s event log is at ENDED - refusing dispatch", session_id)
-            await backend.close()
-            ctx.shutdown(reason="interview already ended per event log")
-            return
         log.info(
             "session %s bootstrap: %d prior events, resuming in %s",
             session_id, len(history), initial.round_id,
@@ -637,42 +492,22 @@ async def interview_session(ctx: agents.JobContext) -> None:
             interruption=InterruptionOptions(mode="vad", min_duration=0.6),
             # keep the early LLM start for latency, but never SPEAK before the
             # turn is committed — speaking early doubled responses.
-            # off by design - see _SPECULATIVE_GENERATION above
-            preemptive_generation=PreemptiveGenerationOptions(
-                enabled=_SPECULATIVE_GENERATION,
-                preemptive_tts=False,
-            ),
+            preemptive_generation=PreemptiveGenerationOptions(enabled=True, preemptive_tts=False),
         ),
     )
-
-    # strong refs: the event loop keeps only weak references to tasks, so an
-    # untracked fire-and-forget log task can be GC'd before it ever runs
-    bg_tasks: set[asyncio.Task] = set()
-
-    def _track(task: asyncio.Task) -> None:
-        bg_tasks.add(task)
-
-        def _done(t: asyncio.Task) -> None:
-            bg_tasks.discard(t)
-            if not t.cancelled() and t.exception() is not None:
-                log.warning("background task failed: %r", t.exception())
-
-        task.add_done_callback(_done)
 
     @session.on("metrics_collected")
     def on_metrics(ev) -> None:  # noqa: ANN001
         m = getattr(ev, "metrics", ev)
         fields = tracker.record(m)
         if isinstance(m, metrics.LLMMetrics):
-            _track(asyncio.create_task(
+            asyncio.create_task(
                 backend.log_llm_call(
                     {
                         "session_id": session_id,
                         "prompt_version_name": conductor.current_prompt_version(),
                         "role": "conduct",
-                        # FallbackAdapter turns may be served by a non-primary
-                        # model; prefer the metric's own attribution
-                        "model": getattr(m, "model", None) or CONDUCT_MODEL,
+                        "model": CONDUCT_MODEL,
                         "input_tokens": getattr(m, "prompt_tokens", 0) or 0,
                         "cached_tokens": getattr(m, "prompt_cached_tokens", 0) or 0,
                         "output_tokens": getattr(m, "completion_tokens", 0) or 0,
@@ -680,7 +515,7 @@ async def interview_session(ctx: agents.JobContext) -> None:
                         "total_ms": int((getattr(m, "duration", 0) or 0) * 1000),
                     }
                 )
-            ))
+            )
         if isinstance(m, metrics.TTSMetrics) and fields:
             turn = tracker.complete_turn()
             if turn and sink:
@@ -795,33 +630,30 @@ async def interview_session(ctx: agents.JobContext) -> None:
                 has_twist=bool(twist_text),
             ):
                 conductor.fold("twist_injected", {"round_id": rid})
-                async with conductor._reply_lock:
-                    await session.generate_reply(
-                        instructions="Their solution passes the visible tests with time to spare. "
-                        f"Introduce this requirement change conversationally: {twist_text}"
-                    )
+                await session.generate_reply(
+                    instructions="Their solution passes the visible tests with time to spare. "
+                    f"Introduce this requirement change conversationally: {twist_text}"
+                )
                 continue
             # Think-aloud nudge: silent coding >90s, max 2 per round
             if conductor.in_code_round() and conductor.sm.should_nudge(
                 conductor.es, _now(), editing=conductor.recent_editing
             ):
                 conductor._pending_nudge = True
-                async with conductor._reply_lock:
-                    await session.generate_reply(
-                        instructions="The candidate has been coding silently for a while. Give one "
-                        "gentle, short invitation to walk you through their thinking. Do not "
-                        "pressure them."
-                    )
+                await session.generate_reply(
+                    instructions="The candidate has been coding silently for a while. Give one "
+                    "gentle, short invitation to walk you through their thinking. Do not "
+                    "pressure them."
+                )
                 continue
             target = conductor.sm.should_transition(conductor.es, _now())
             if target is not None:
                 await conductor.transition_to(target, session)
                 if target == ENDED:
-                    async with conductor._reply_lock:
-                        await session.generate_reply(
-                            instructions="Close the interview warmly in one or two sentences: thank "  # noqa: E501
-                            "them, tell them the team will follow up. intent wrapup."
-                        )
+                    await session.generate_reply(
+                        instructions="Close the interview warmly in one or two sentences: thank "
+                        "them, tell them the team will follow up. intent wrapup."
+                    )
                     await asyncio.sleep(8)
                     if session_id:
                         await backend.set_status(session_id, "completed")
@@ -836,13 +668,8 @@ async def interview_session(ctx: agents.JobContext) -> None:
         last_code = ""
         last_seq = -1
         prev_shapes: list | None = None
-        last_run_summary: str | None = None
-        last_run_failures: list[str] = []
         while True:
-            # code rounds poll fast: the candidate can ask "can you see my
-            # code?" at any moment and a 15s-old snapshot answers wrongly.
-            # Still off the voice path - this is a background task.
-            await asyncio.sleep(4 if conductor.in_code_round() else 15)
+            await asyncio.sleep(15)
             if not session_id:
                 continue
             rid = conductor.es.round_id or ""
@@ -887,22 +714,6 @@ async def interview_session(ctx: agents.JobContext) -> None:
             runs = [e for e in events if e["type"] == "execution_result"]
             rid = conductor.es.round_id or ""
             if runs:
-                # remember across polls (each poll sees only NEW events)
-                _resp = runs[-1]["payload"].get("response", {})
-                _per = _resp.get("per_test", [])
-                _passed = sum(1 for t in _per if t.get("passed"))
-                last_run_summary = f"{_resp.get('status')} - {_passed}/{len(_per)} tests passed"
-                last_run_failures = []
-                for t in _per:
-                    if t.get("hidden") or t.get("passed"):
-                        continue
-                    detail = (t.get("stderr") or t.get("stdout") or "").strip()[:300]
-                    last_run_failures.append(
-                        f"failing_visible_test {t.get('id')}: "
-                        f"{t.get('status') or 'wrong output'}"
-                        + (f"\noutput: {detail}" if detail else "")
-                    )
-            if runs:
                 resp = runs[-1]["payload"].get("response", {})
                 per = resp.get("per_test", [])
                 visible = [t for t in per if not t.get("hidden")]
@@ -921,17 +732,10 @@ async def interview_session(ctx: agents.JobContext) -> None:
                 continue
             code = snap.get("code", "")
             conductor.recent_editing = code != last_code
-            if len(code) < 20_000 and len(last_code) < 20_000:
-                diff_lines = list(
-                    difflib.unified_diff(
-                        last_code.splitlines(), code.splitlines(), lineterm="", n=1
-                    )
-                )
-                diff = "\n".join(diff_lines[2:])[:1200]
-            else:
-                # difflib is quadratic — a huge paste must not stall the event
-                # loop the live audio pipeline runs on
-                diff = "(large edit — diff skipped)" if code != last_code else ""
+            diff_lines = list(
+                difflib.unified_diff(last_code.splitlines(), code.splitlines(), lineterm="", n=1)
+            )
+            diff = "\n".join(diff_lines[2:])[:1200]
             last_code = code
             # The observation always carries the FULL current code so the model
             # can genuinely read it — not just recent diffs (§7.2, revised).
@@ -940,14 +744,23 @@ async def interview_session(ctx: agents.JobContext) -> None:
                 lines.append(f"current_code_in_editor:\n```\n{code[:3000]}\n```")
             else:
                 lines.append("current_code_in_editor: (editor is empty)")
-            if last_run_summary:
-                lines.append(f"last_run: {last_run_summary}")
+            if runs:
+                last_run = runs[-1]["payload"].get("response", {})
+                per = last_run.get("per_test", [])
+                passed = sum(1 for t in per if t.get("passed"))
+                status = last_run.get("status")
+                lines.append(f"last_run: {status} — {passed}/{len(per)} tests passed")
                 # VISIBLE failing tests only (the candidate already sees these);
-                # hidden-test expectations never enter context (invariant #3).
-                # Carried across polls: each poll sees only NEW events, so the
-                # run detail used to vanish from the model's view after one
-                # 15s window.
-                lines.extend(last_run_failures)
+                # hidden-test expectations never enter context (invariant #3)
+                for t in per:
+                    if t.get("hidden") or t.get("passed"):
+                        continue
+                    detail = (t.get("stderr") or t.get("stdout") or "").strip()[:300]
+                    lines.append(
+                        f"failing_visible_test {t.get('id')}: "
+                        f"{t.get('status') or 'wrong output'}"
+                        + (f"\noutput: {detail}" if detail else "")
+                    )
             if diff:
                 lines.append("recent_changes:\n" + diff)
             conductor.latest_observation = "\n".join(lines)
@@ -963,33 +776,16 @@ async def interview_session(ctx: agents.JobContext) -> None:
         await backend.set_status(session_id, "in_progress")
 
     await session.start(room=ctx.room, agent=conductor)
+    t1 = asyncio.create_task(transition_loop())
+    t2 = asyncio.create_task(observation_loop())
 
-    async def _supervise(name: str, loop_fn) -> None:  # noqa: ANN001
-        """An iteration crash must log and restart the loop — never silently
-        kill the interview state machine (the old failure mode: a single
-        provider exception froze the interview with no transition ever
-        firing again)."""
-        while True:
-            try:
-                await loop_fn()
-                return  # clean return: interview ended
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("%s crashed; restarting in 5s", name)
-                await asyncio.sleep(5)
-
-    t1 = asyncio.create_task(_supervise("transition_loop", transition_loop))
-    t2 = asyncio.create_task(_supervise("observation_loop", observation_loop))
-
-    async with conductor._reply_lock:
-        await session.generate_reply(
-            instructions="Greet the candidate warmly, confirm they can hear you, and set expectations "  # noqa: E501
-            "for the interview in one or two sentences."
-            if fresh_session
-            else f"You are resuming after a brief connection drop, mid-'{initial.round_id}' round. "
-            "Apologize briefly for the glitch and pick the conversation back up."
-        )
+    await session.generate_reply(
+        instructions="Greet the candidate warmly, confirm they can hear you, and set expectations "
+        "for the interview in one or two sentences."
+        if fresh_session
+        else f"You are resuming after a brief connection drop, mid-'{initial.round_id}' round. "
+        "Apologize briefly for the glitch and pick the conversation back up."
+    )
 
     async def on_shutdown() -> None:
         for t in (t1, t2):
@@ -1002,19 +798,6 @@ async def interview_session(ctx: agents.JobContext) -> None:
             sink.emit("turn_latency", {"summary": True, **summary})
             await sink.close()
         await backend.close()
-        # Release the per-session agent lock so a future redispatch (e.g.
-        # after a crash) can acquire it. Best-effort — expiry also handles it.
-        if _agent_lock_held and _agent_lock_r is not None and _agent_lock_key:
-            try:
-                _agent_lock_r.delete(_agent_lock_key)
-                _agent_lock_r.close()
-            except Exception:
-                pass
-        elif _agent_lock_r is not None:
-            try:
-                _agent_lock_r.close()
-            except Exception:
-                pass
 
     ctx.add_shutdown_callback(on_shutdown)
 

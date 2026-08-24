@@ -8,7 +8,7 @@ import { PortalScreen, StepCard } from "./PortalScreen";
 const EXPLAINER = [
   {
     title: "Talk with our AI interviewer",
-    body: "A natural voice conversation. Take your time. Pauses to think are expected, and clarifying questions are welcome.",
+    body: "A natural voice conversation. Take your time — pauses to think are expected, and clarifying questions are welcome.",
   },
   {
     title: "Solve a problem in the editor",

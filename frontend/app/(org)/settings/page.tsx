@@ -195,7 +195,7 @@ function PoliciesSection() {
         {version && <span className="font-mono text-xs font-normal text-muted">v{version}</span>}
       </h2>
       <p className="mb-2 text-sm text-muted">
-        Versions are immutable. A text change ships as a new version and applies to
+        Versions are immutable — a text change ships as a new version and applies to
         candidacies created after it.
       </p>
       <div className="flex flex-col gap-2">
@@ -245,7 +245,7 @@ function DataSubjectSection() {
       a.download = `export-${id.slice(0, 8)}.json`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast("Export downloaded. The action is in the audit log", "success");
+      toast("Export downloaded — the action is in the audit log", "success");
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "error");
     } finally {
@@ -258,7 +258,7 @@ function DataSubjectSection() {
     try {
       const r = await eraseCandidacy(id);
       toast(
-        `Erased: ${r.erased_sessions} sessions, ${r.events_purged} events purged. Audit-logged`,
+        `Erased: ${r.erased_sessions} sessions, ${r.events_purged} events purged — audit-logged`,
         "success",
       );
       setConfirmErase(null);

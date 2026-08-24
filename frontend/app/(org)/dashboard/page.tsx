@@ -50,19 +50,19 @@ export default function DashboardPage() {
       />
 
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="interview sessions this week" value={sessions ? thisWeek.length : "-"} />
+        <KpiCard label="interview sessions this week" value={sessions ? thisWeek.length : "—"} />
         <KpiCard
           label="session completion rate (all-time)"
-          value={completionRate ?? "-"}
+          value={completionRate ?? "—"}
           unit={completionRate === null ? undefined : "%"}
         />
         <KpiCard
           label="awaiting review"
-          value={queue ? queue.length : "-"}
+          value={queue ? queue.length : "—"}
           href="/review"
           tone={queue && queue.length > 0 ? "attention" : "default"}
         />
-        <KpiCard label="candidates interviewed" value={stats?.interviewed ?? "-"} />
+        <KpiCard label="candidates interviewed" value={stats?.interviewed ?? "—"} />
       </div>
 
       {/* attention list */}
@@ -75,7 +75,7 @@ export default function DashboardPage() {
               className="flex items-center justify-between rounded-lg border border-amber/40 bg-panel px-4 py-3 hover:border-amber"
             >
               <span className="text-base text-ink">
-                Needs review <b>({queue.length})</b>, oldest first
+                Needs review <b>({queue.length})</b> — oldest first
               </span>
               <span aria-hidden className="text-muted">→</span>
             </Link>
@@ -93,7 +93,7 @@ export default function DashboardPage() {
           )}
           {(!queue || queue.length === 0) && briefsReady === 0 && (
             <div className="rounded-lg border border-line bg-panel px-4 py-3 text-muted">
-              Nothing waiting on you. Invite candidates or check the funnel below.
+              Nothing waiting on you — invite candidates or check the funnel below.
             </div>
           )}
         </div>
@@ -104,7 +104,7 @@ export default function DashboardPage() {
         <h2 className="mb-2 font-display text-md font-semibold text-ink">Roles</h2>
         {stats && stats.by_role.length === 0 && (
           <div className="rounded-lg border border-line bg-panel p-5 text-muted">
-            No roles yet. Create one under Roles, then invite candidates into it.
+            No roles yet — create one under Roles, then invite candidates into it.
           </div>
         )}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -113,7 +113,7 @@ export default function DashboardPage() {
               <div className="font-medium text-ink">{r.role_name}</div>
               <div className="mt-3 flex items-center gap-2 font-mono text-sm">
                 <FunnelStage label="invited" count={r.invited} href={`/candidates?role=${r.role_id}`} />
-                <span aria-hidden className="text-line">-</span>
+                <span aria-hidden className="text-line">—</span>
                 <FunnelStage
                   label="interviewed"
                   count={r.interviewed}

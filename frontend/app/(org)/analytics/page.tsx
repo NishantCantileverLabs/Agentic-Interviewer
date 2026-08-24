@@ -5,10 +5,8 @@ import { cx } from "../../../lib/cx";
 import { PageHeader } from "../../../components/ui";
 import {
   type CalibrationReport,
-  type EvalHealth,
   type LatencyReport,
   calibration,
-  evalHealth,
   latencyReport,
 } from "../../../lib/org";
 
@@ -42,59 +40,19 @@ function InsufficientData({
 export default function AnalyticsPage() {
   const [cal, setCal] = useState<CalibrationReport | null>(null);
   const [lat, setLat] = useState<LatencyReport | null>(null);
-  const [health, setHealth] = useState<EvalHealth | null>(null);
 
   useEffect(() => {
     calibration().then(setCal).catch(() => setCal({ n: 0 }));
     latencyReport().then(setLat).catch(() => null);
-    evalHealth().then(setHealth).catch(() => null);
-    // the eval pipeline is the one background system whose failure is
-    // otherwise invisible — poll it while this page is open
-    const t = setInterval(() => {
-      evalHealth().then(setHealth).catch(() => null);
-    }, 30_000);
-    return () => clearInterval(t);
   }, []);
 
   return (
     <div className="mx-auto max-w-[1000px]">
       <PageHeader title="Analytics" />
 
-      {health && !health.healthy && (
-        <div
-          role="status"
-          className="mt-4 rounded-lg border border-amber/40 bg-panel p-4"
-        >
-          <div className="font-medium text-ink">Evaluation pipeline needs attention</div>
-          <ul className="mt-1 space-y-0.5 text-sm text-ink-soft">
-            {health.stuck_sessions > 0 && (
-              <li>
-                <b>{health.stuck_sessions}</b> completed interview
-                {health.stuck_sessions === 1 ? "" : "s"} finished over 10 minutes ago
-                with no evaluation. These show as “Processing” to recruiters.
-              </li>
-            )}
-            {health.dead_letter > 0 && (
-              <li>
-                <b>{health.dead_letter}</b> evaluation job
-                {health.dead_letter === 1 ? "" : "s"} failed three times and stopped
-                retrying.
-              </li>
-            )}
-            {health.queue_depth > 0 && (
-              <li>
-                <b>{health.queue_depth}</b> job{health.queue_depth === 1 ? "" : "s"}{" "}
-                waiting in the queue.
-              </li>
-            )}
-            {health.queue_depth < 0 && <li>The job queue is unreachable.</li>}
-          </ul>
-        </div>
-      )}
-
       <section className="mt-6">
         <h2 className="mb-2 font-display text-md font-semibold text-ink">
-          Calibration: AI vs human agreement{" "}
+          Calibration — AI vs human agreement{" "}
           <span className="font-mono text-xs font-normal text-muted">
             n={cal?.n ?? "…"}
           </span>
@@ -154,7 +112,7 @@ export default function AnalyticsPage() {
             })}
           {(lat?.sessions ?? []).filter((s) => s.turns >= 3).length === 0 && (
             <p className="text-sm text-muted">
-              No measured sessions yet. Latency rows appear after live interviews.
+              No measured sessions yet — latency rows appear after live interviews.
             </p>
           )}
         </div>

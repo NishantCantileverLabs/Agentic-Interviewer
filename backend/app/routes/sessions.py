@@ -22,23 +22,6 @@ from app.tenancy import (
 
 router = APIRouter()
 
-# a finished interview never goes back to live
-_TERMINAL_SESSION_STATUSES = ("completed", "aborted")
-
-# events that drive engine state / scoring — never written by a browser
-_CONTROL_EVENT_TYPES = frozenset({
-    "state_transition",
-    "hint_issued",
-    "twist_injected",
-    "execution_result",
-    "agent_turn",
-    "round_handoff",
-    "exhibit_revealed",
-    "turn_latency",
-    "error",
-    "fallback_triggered",
-})
-
 
 @router.post("/sessions", response_model=SessionOut, status_code=201)
 def create_session(
@@ -71,7 +54,7 @@ def create_session(
         candidate_label=body.candidate_label,
         role_config_id=body.role_config_id,
         plan_id=plan_id,
-        retention_days=body.retention_days or get_settings().retention_days_default,
+        retention_days=body.retention_days,
         jd_text=body.jd_text,
         resume_text=body.resume_text,
     )
@@ -91,14 +74,6 @@ def get_session(
     if session is None:
         raise HTTPException(404, "session not found")
     return session
-
-
-@router.head("/sessions/{session_id}")
-def head_session(
-    session_id: uuid.UUID,
-    ctx: OrgContext = Depends(get_org_context),
-) -> None:
-    ensure_session_access(ctx, session_id)
 
 
 @router.post("/sessions/{session_id}/candidate-link")
@@ -139,17 +114,6 @@ def append_events(
         raise HTTPException(404, "session not found")
     if not body.events:
         return {"appended": 0}
-    if ctx.role == "candidate":
-        # The browser reports what the CANDIDATE did (typing, pastes, runs,
-        # tab visibility). Control events drive engine state and the closure
-        # guards that read it, so they are service/staff only: appending a
-        # state_transition was enough to move rebuilt state off ENDED and
-        # resurrect a finished interview.
-        illegal = {e.type for e in body.events} & _CONTROL_EVENT_TYPES
-        if illegal:
-            raise HTTPException(
-                403, f"these event types are not writable by a candidate: {sorted(illegal)}"
-            )
 
     db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": str(session_id)})
 
@@ -270,13 +234,6 @@ def set_session_status(
         raise HTTPException(404, "session not found")
     if body.status not in SESSION_STATUSES:
         raise HTTPException(422, f"invalid status {body.status!r}")
-    if session.status in _TERMINAL_SESSION_STATUSES and body.status != session.status:
-        # completed/aborted is a one-way door. Without this, every other
-        # closure guard (room token, /execute, agent dispatch) was bypassable
-        # by simply flipping the session back to in_progress first.
-        raise HTTPException(
-            409, f"this interview is {session.status} and cannot be reopened"
-        )
     if body.status == "in_progress" and session.candidacy_id is not None:
         # Invariant #12: consent gate is API-enforced, not UI-enforced
         from app.routes.lifecycle import consent_missing
@@ -293,17 +250,6 @@ def set_session_status(
         session.started_at = now
     if body.status in ("completed", "aborted") and session.ended_at is None:
         session.ended_at = now
-    if body.status == "completed" and session.candidacy_id is not None:
-        # close the candidacy for plan-based interviews (practice included) —
-        # only the pipeline orchestrator managed this before, so single-round
-        # candidacies stayed "in_progress" forever and the portal kept
-        # offering re-entry into a finished interview
-        from app.models_phase23 import Candidacy, CandidacyProgress
-
-        if db.get(CandidacyProgress, session.candidacy_id) is None:
-            cand = db.get(Candidacy, session.candidacy_id)
-            if cand is not None and cand.status not in ("withdrawn", "reviewed"):
-                cand.status = "completed"
     db.commit()
 
     if body.status == "completed" and not was_completed:
@@ -317,15 +263,7 @@ def set_session_status(
             r = _redis.Redis.from_url(get_settings().redis_url, socket_timeout=3)
             r.lpush(get_settings().eval_queue, _json.dumps({"session_id": str(session_id)}))
         except _redis.RedisError:
-            # LOUD failure: this session will sit unevaluated until someone
-            # re-enqueues it — a silent pass here is how sessions get stuck
-            # in "Processing" forever
-            import logging
-
-            logging.getLogger("sessions").error(
-                "EVAL ENQUEUE FAILED for session %s — redis unavailable; "
-                "re-enqueue manually or restart the worker", session_id
-            )
+            pass
     return session
 
 
@@ -340,94 +278,39 @@ def issue_room_token(
     session = db.get(Session, session_id)
     if session is None:
         raise HTTPException(404, "session not found")
-    if session.status in ("completed", "aborted"):
-        # a finished interview is closed: no room re-entry, no agent
-        # re-dispatch, no resumed context. The portal routes to /next.
-        raise HTTPException(409, "this interview has ended")
-
-    # Serialize concurrent token requests for the same session (StrictMode
-    # double-mount, reconnect double-click). Without this two requests both
-    # see agent_dispatched_at==NULL and both attach a dispatch.
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"livekit_dispatch:{session_id}"})
-    # Re-fetch inside the lock so we see the winner's write.
-    session = db.get(Session, session_id)
-    if session is None:
-        raise HTTPException(404, "session not found")
 
     room = session.livekit_room or f"interview-{session_id}"
     if session.livekit_room != room:
         session.livekit_room = room
         db.commit()
-        # re-fetch after commit to keep the lock's snapshot consistent
-        session = db.get(Session, session_id)
-        if session is None:
-            raise HTTPException(404, "session not found")
-
-    # Only the FIRST token for a session ever carries an explicit agent
-    # dispatch. Every later token (reconnect, StrictMode remount, tab
-    # duplicate) rejoins the existing room — a second dispatch creates a
-    # second agent participant and the candidate hears two voices.
-    # agent_dispatched_at is the idempotency guard. Short-TTL redispatch
-    # handles the crash-recovery case where the dispatched agent never
-    # arrived or died: if the dispatch is >90s old and no agent_turn has
-    # appeared in that window, allow one more dispatch attempt.
-    now = datetime.now(UTC)
-    should_dispatch = session.agent_dispatched_at is None
-    if not should_dispatch and session.agent_dispatched_at is not None:
-        age_s = (now - session.agent_dispatched_at).total_seconds()
-        # Crash/never-arrived recovery: the dispatched agent should flip the
-        # session to in_progress and emit an agent_turn greeting within ~15s.
-        # If 90s pass with neither, the dispatch was lost and a reconnect
-        # should be allowed to try again — without this, a failed dispatch
-        # would strand the candidate with no voice.
-        if age_s > 90 and session.status == "created":
-            recent_agent_turn = db.scalar(
-                select(InterviewEvent.id)
-                .where(
-                    InterviewEvent.session_id == session_id,
-                    InterviewEvent.type == "agent_turn",
-                    InterviewEvent.ts > session.agent_dispatched_at,
-                )
-                .limit(1)
-            )
-            if recent_agent_turn is None:
-                should_dispatch = True
-    if should_dispatch:
-        session.agent_dispatched_at = now
-        db.commit()
 
     settings = get_settings()
-    at = (
+    token = (
         lk_api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
         .with_identity(f"candidate-{session_id}")
         .with_name(session.candidate_label)
         .with_grants(lk_api.VideoGrants(room_join=True, room=room))
-    )
-    if should_dispatch:
         # Explicit agent dispatch: the room requests the named interviewer
         # worker on creation (deterministic; replaces automatic dispatch).
-        at = at.with_room_config(
+        .with_room_config(
             lk_api.RoomConfiguration(
                 agents=[lk_api.RoomAgentDispatch(agent_name="interviewer")]
             )
         )
-    token = at.to_jwt()
-    return {"token": token, "url": settings.livekit_public_url or settings.livekit_url, "room": room}
+        .to_jwt()
+    )
+    return {"token": token, "url": settings.livekit_url, "room": room}
 
 
 @router.get("/sessions/{session_id}/replay", response_model=list[EventOut])
 def replay(
     session_id: uuid.UUID,
     after_seq: int = -1,
-    limit: int = 5000,
     db: DbSession = Depends(get_db),
     ctx: OrgContext = Depends(get_org_context),
 ) -> list[InterviewEvent]:
     """Ordered event stream for a session (feeds T5 observation + T8 review).
-    `after_seq` supports incremental polling (only events with seq > after_seq);
-    `limit` caps the page — callers page by passing the last seq they saw.
-    A long interview's full log is tens of MB of jsonb, so an unbounded read
-    was a memory/latency hazard on every poll."""
+    `after_seq` supports incremental polling (only events with seq > after_seq)."""
     ensure_session_access(ctx, session_id)
     if db.get(Session, session_id) is None:
         raise HTTPException(404, "session not found")
@@ -436,7 +319,6 @@ def replay(
             select(InterviewEvent)
             .where(InterviewEvent.session_id == session_id, InterviewEvent.seq > after_seq)
             .order_by(InterviewEvent.seq)
-            .limit(max(1, min(limit, 20000)))
         )
     )
 

@@ -37,9 +37,7 @@ def current_phase(es: EngineState, round_id: str, elapsed_frac: float) -> str:
     return phase
 
 
-def exhibit_release_allowed(
-    pack: dict[str, Any], exhibit_id: str, es: EngineState, round_id: str
-) -> bool:
+def exhibit_release_allowed(pack: dict[str, Any], exhibit_id: str, es: EngineState, round_id: str) -> bool:
     """Engine-owned release rules: 'on_request' exhibits release when the
     model requests them (it only requests after a qualifying candidate ask,
     per prompt); each releases at most once."""
@@ -60,9 +58,7 @@ def untouched_must_areas(pack: dict[str, Any], transcript_text: str) -> list[str
     return out
 
 
-def active_math_block(
-    pack: dict[str, Any], es: EngineState, round_id: str, phase: str
-) -> dict[str, Any] | None:
+def active_math_block(pack: dict[str, Any], es: EngineState, round_id: str, phase: str) -> dict[str, Any] | None:
     if phase != "ANALYSIS":
         return None
     for block in pack.get("math_blocks", []):

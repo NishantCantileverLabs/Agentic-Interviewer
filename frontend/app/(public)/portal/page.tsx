@@ -36,7 +36,7 @@ export default function CandidateHome() {
       setDemoError(
         r.status === 409
           ? "You've used all your practice interviews."
-          : "Could not start a practice interview. Try again.",
+          : "Could not start a practice interview — try again.",
       );
       setDemoBusy(false);
     }
@@ -140,7 +140,7 @@ export default function CandidateHome() {
                 <div className="shrink-0">
                   {done ? (
                     <span className="text-sm text-muted">
-                      Done. The team will be in touch
+                      Done — the team will be in touch
                     </span>
                   ) : r.status === "withdrawn" ? (
                     <span className="text-sm text-muted">Withdrawn</span>
@@ -162,7 +162,7 @@ export default function CandidateHome() {
                 Try a practice interview
               </div>
               <p className="mt-0.5 text-sm text-muted">
-                Ten minutes with the AI interviewer. No stakes, nothing shared.
+                Ten minutes with the AI interviewer — no stakes, nothing shared.
               </p>
             </div>
             <Button variant="secondary" onClick={startDemo} loading={demoBusy}>

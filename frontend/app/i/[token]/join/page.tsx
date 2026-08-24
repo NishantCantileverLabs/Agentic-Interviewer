@@ -89,7 +89,7 @@ export default function JoinPage() {
         detail:
           rtt < 400
             ? `${rtt} ms`
-            : `${rtt} ms. A slow connection may add pauses; a wired or strong wifi network helps`,
+            : `${rtt} ms — a slow connection may add pauses; a wired or strong wifi network helps`,
       });
     } catch {
       set("net", {
@@ -258,7 +258,7 @@ export default function JoinPage() {
 
             {checks.some((c) => c.required && c.state === "fail") && (
               <p className="mt-3 text-sm text-muted">
-                Stuck? This link also works on another computer. You can switch devices
+                Stuck? This link also works on another computer — you can switch devices
                 and pick up right here.
               </p>
             )}
@@ -356,7 +356,7 @@ function Lobby({
             </h1>
             {starting && (
               <p className="mt-2 text-sm text-muted" aria-busy="true">
-                Setting up your room. This takes a few seconds.
+                Setting up your room — this takes a few seconds.
               </p>
             )}
             {startError && (
@@ -382,7 +382,7 @@ function Lobby({
         <div className="mt-5 rounded-md border border-line bg-paper p-4 text-left">
           <div className="font-medium text-ink">While you wait</div>
           <p className="mt-1 text-sm text-ink-soft">
-            You will be speaking with our AI interviewer. Take your time. Pauses to
+            You will be speaking with our AI interviewer. Take your time — pauses to
             think are expected. You can ask it to repeat or clarify anything.
           </p>
           {roleName && (
@@ -458,7 +458,7 @@ function Lobby({
         }
       >
         <p className="text-ink-soft">
-          Your booking is kept. You can come back any time before your slot.
+          Your booking is kept — you can come back any time before your slot.
         </p>
       </Modal>
     </StepCard>

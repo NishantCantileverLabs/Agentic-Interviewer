@@ -140,7 +140,7 @@ export default function ConsentPage() {
               }
             >
               <p className="text-ink-soft">
-                No problem. The team will be notified and this link will close. You can
+                No problem — the team will be notified and this link will close. You can
                 always contact them if you change your mind.
               </p>
             </Modal>

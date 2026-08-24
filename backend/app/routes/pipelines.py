@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
@@ -121,12 +121,6 @@ def start_pipeline(
     pipe = db.get(Pipeline, body.pipeline_id)
     if cand is None or pipe is None:
         raise HTTPException(404, "candidacy or pipeline not found")
-    # serialize concurrent starts: without this, two requests both pass the
-    # exists-check and the loser dies on the PK instead of getting a clean 409
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
-        {"k": f"pipeline:{candidacy_id}"},
-    )
     if db.get(CandidacyProgress, candidacy_id) is not None:
         raise HTTPException(409, "pipeline already started for this candidacy")
     db.add(
@@ -151,12 +145,6 @@ def advance_pipeline(
 def _advance(db: DbSession, ctx: OrgContext, candidacy_id: uuid.UUID) -> dict[str, Any]:
     """Orchestrator: evaluate the gate for the finished round (if any), then
     create the next round's session, or finish the pipeline."""
-    # one advance at a time per candidacy: a double-click or portal retry
-    # must not create two sessions for the same round / skip a round
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
-        {"k": f"pipeline:{candidacy_id}"},
-    )
     prog = db.get(CandidacyProgress, candidacy_id)
     cand = db.get(Candidacy, candidacy_id)
     if prog is None or cand is None:
@@ -282,12 +270,6 @@ async def generate_aggregate_brief(
         raise HTTPException(500, "progress references a missing pipeline")
     from app.eval.aggregate import build_aggregate, render_aggregate_html
 
-    # serialize per candidacy: version = max+1 with no unique constraint means
-    # two concurrent generates would write the same version twice
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
-        {"k": f"aggbrief:{candidacy_id}"},
-    )
     rc = db.get(RoleConfig, pipe.role_config_id) if pipe.role_config_id else None
     agg = await build_aggregate(
         db, candidacy_id, list(pipe.rounds), prog.round_sessions,
@@ -315,13 +297,8 @@ async def generate_aggregate_brief(
             secure=settings.s3_endpoint.startswith("https"),
         )
         data = html_doc.encode()
-        # sync MinIO client in an async route: off the event loop, or every
-        # in-flight request (including live-interview polling) stalls
-        import asyncio as _asyncio
-
-        await _asyncio.to_thread(
-            client.put_object,
-            "briefs", object_name, io.BytesIO(data), len(data), content_type="text/html",
+        client.put_object(
+            "briefs", object_name, io.BytesIO(data), len(data), content_type="text/html"
         )
     except Exception:  # noqa: BLE001 - JSON result still returned
         key = None

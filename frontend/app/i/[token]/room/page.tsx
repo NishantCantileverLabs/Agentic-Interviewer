@@ -43,46 +43,20 @@ export default function RoomPage() {
   const [error, setError] = useState<string | null>(null);
 
   // ── bootstrap: room credentials + current round content ─────────
-  // Guard against StrictMode double-invoke and concurrent reconnect
-  // clicks: the old code fired two getToken() in parallel, each
-  // carrying RoomConfiguration(agents=[interviewer]) → two agents.
-  // Now the backend token is idempotent but we still de-duplicate on
-  // the client so we don't churn the LiveKitRoom mount.
-  const connectingRef = useRef(false);
-  const bootstrappedRef = useRef(false);
   const connect = useCallback(async () => {
-    if (!sessionId || connectingRef.current) return;
-    // Don't fetch a second token if we already have one — a reconnect
-    // should reuse the existing grant unless we are in dropped state.
-    if (creds && !dropped) return;
-    connectingRef.current = true;
+    if (!sessionId) return;
     setError(null);
     try {
-      const next = await getToken(sessionId);
-      setCreds(next);
+      setCreds(await getToken(sessionId));
       setDropped(false);
     } catch (e) {
-      // a finished interview refuses room tokens (409): route to the
-      // wrap-up screen instead of showing a join error
-      try {
-        const status = await getSessionStatus(sessionId);
-        if (status === "completed" || status === "aborted") {
-          router.push(`/i/${token}/next`);
-          return;
-        }
-      } catch {
-        /* fall through to the generic error */
-      }
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      connectingRef.current = false;
     }
-  }, [sessionId, router, token, creds, dropped]);
+  }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId || bootstrappedRef.current) return;
-    bootstrappedRef.current = true;
     void connect();
+    if (!sessionId) return;
     void getQuestion(sessionId).then(setQuestion).catch(() => undefined);
     // the first paint must already show the right tool for the current round
     void fetch(apiUrl(`/sessions/${sessionId}/tools`))
@@ -144,7 +118,7 @@ export default function RoomPage() {
           beaconQueue.current = [];
           void postEvents(sessionId, batch);
         })
-        .catch(() => undefined); // still offline. Keep buffering
+        .catch(() => undefined); // still offline — keep buffering
     }, 5_000);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
@@ -204,7 +178,7 @@ export default function RoomPage() {
           role="alert"
           className="flex items-center justify-center gap-3 border-b border-amber/40 bg-panel px-4 py-2 text-sm text-amber"
         >
-          Voice connection lost. Reconnecting. Your work is safe and the interview
+          Voice connection lost — reconnecting. Your work is safe and the interview
           resumes where it left off.
           <Button size="sm" variant="secondary" onClick={() => void connect()}>
             Reconnect now
@@ -245,7 +219,7 @@ export default function RoomPage() {
           >
             <div className="p-4 text-center">
               <p className="text-sm text-muted" aria-busy={!error}>
-                {error ?? "Connecting your voice line. A few seconds."}
+                {error ?? "Connecting your voice line — a few seconds."}
               </p>
               {error && (
                 <div className="mt-3">
@@ -260,23 +234,17 @@ export default function RoomPage() {
 
         {!conversationOnly && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
-            {/* key={sessionId}: a new session gets a FRESH tool instance.
-                Without it React reuses the mounted component, Monaco's
-                onMount never re-runs, and the editor stays bound to the
-                previous session's document. */}
             {tools.includes("editor") && (
-              <CodeTool key={sessionId} sessionId={sessionId} question={question} />
+              <CodeTool sessionId={sessionId} question={question} />
             )}
-            {tools.includes("canvas") && <CanvasTool key={sessionId} sessionId={sessionId} />}
-            {tools.includes("exhibits") && <ExhibitsTool key={sessionId} sessionId={sessionId} />}
-            {tools.includes("scratchpad") && (
-              <ScratchpadTool key={sessionId} sessionId={sessionId} />
-            )}
+            {tools.includes("canvas") && <CanvasTool sessionId={sessionId} />}
+            {tools.includes("exhibits") && <ExhibitsTool sessionId={sessionId} />}
+            {tools.includes("scratchpad") && <ScratchpadTool sessionId={sessionId} />}
           </div>
         )}
       </div>
 
-      {/* help drawer. Technical help only */}
+      {/* help drawer — technical help only */}
       <Drawer open={helpOpen} onClose={() => setHelpOpen(false)} title="Help">
         <div className="flex flex-col gap-4 text-base text-ink-soft">
           <div>
@@ -293,7 +261,7 @@ export default function RoomPage() {
           <div>
             <div className="font-medium text-ink">Still stuck?</div>
             <p className="mt-1 text-sm">
-              This link works on another computer. You can switch devices and resume.
+              This link works on another computer — you can switch devices and resume.
               For anything else, contact the team from your invitation email.
             </p>
           </div>

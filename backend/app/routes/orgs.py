@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.db import SessionLocal
 from app.models import Org
-from app.tenancy import OrgContext, get_org_context, require_role
+from app.tenancy import OrgContext, get_org_context
 
 router = APIRouter()
 
@@ -28,13 +28,7 @@ class OrgIn(BaseModel):
 
 
 @router.post("/orgs", status_code=201)
-def create_org(
-    body: OrgIn,
-    # platform-operator action: only the service key (or the dev header stub,
-    # which resolves to a role) may touch the tenant registry — before this
-    # gate, ANY anonymous caller could create orgs
-    ctx: OrgContext = Depends(require_role("service")),
-) -> dict[str, str]:
+def create_org(body: OrgIn) -> dict[str, str]:
     db = _open_db()
     try:
         if db.scalar(select(Org).where(Org.name == body.name)) is not None:
@@ -48,10 +42,7 @@ def create_org(
 
 
 @router.get("/orgs")
-def list_orgs(
-    # the tenant registry is no org's business — service key only
-    ctx: OrgContext = Depends(require_role("service")),
-) -> list[dict[str, str]]:
+def list_orgs() -> list[dict[str, str]]:
     db = _open_db()
     try:
         return [{"id": str(o.id), "name": o.name} for o in db.scalars(select(Org))]

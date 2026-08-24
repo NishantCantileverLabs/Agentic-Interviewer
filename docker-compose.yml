@@ -6,11 +6,10 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: interview
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-interview}
+      POSTGRES_PASSWORD: interview
       POSTGRES_DB: interview
     ports:
-      # loopback only — the DB is never a LAN-facing service
-      - "127.0.0.1:5432:5432"
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +22,7 @@ services:
     restart: unless-stopped
     image: redis:7-alpine
     ports:
-      - "127.0.0.1:6379:6379"
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -35,11 +34,11 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -53,12 +52,9 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY &&
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
       mc mb --ignore-existing local/recordings &&
       mc mb --ignore-existing local/briefs
       "
@@ -68,12 +64,12 @@ services:
     build: ./backend
     environment:
       # app runs as non-superuser (RLS binds); migrations as owner
-      DATABASE_URL: postgresql+psycopg://app_user:${APP_DB_PASSWORD:-app_user_dev_pass}@postgres:5432/interview
-      MIGRATIONS_DATABASE_URL: postgresql+psycopg://interview:${POSTGRES_PASSWORD:-interview}@postgres:5432/interview
+      DATABASE_URL: postgresql+psycopg://app_user:app_user_dev_pass@postgres:5432/interview
+      MIGRATIONS_DATABASE_URL: postgresql+psycopg://interview:interview@postgres:5432/interview
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
       S3_BUCKET: recordings
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -81,23 +77,15 @@ services:
       CONDUCT_MODEL: ${CONDUCT_MODEL:-claude-haiku-4-5}
       EVAL_MODEL: ${EVAL_MODEL:-claude-opus-5}
       JUDGE0_URL: http://judge0:2358
-      JUDGE0_AUTH_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
-      LIVEKIT_URL: ${LIVEKIT_URL:-ws://livekit:7880}
-      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-}
       ENVIRONMENT: ${ENVIRONMENT:-dev}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-}
       CANDIDATE_LINK_SECRET: ${CANDIDATE_LINK_SECRET:-dev-candidate-secret-change-me}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
       DEV_DEFAULT_ORG: ${DEV_DEFAULT_ORG:-false}
-    volumes:
-      - ./prompts:/srv/prompts:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -105,7 +93,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "alembic upgrade head && python scripts/sync_prompts.py /srv/prompts && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s
@@ -119,29 +107,16 @@ services:
     restart: unless-stopped
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg://app_user:${APP_DB_PASSWORD:-app_user_dev_pass}@postgres:5432/interview
+      DATABASE_URL: postgresql+psycopg://app_user:app_user_dev_pass@postgres:5432/interview
       REDIS_URL: redis://redis:6379/0
       EVAL_QUEUE: evaluate_session
       S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       EVAL_MODEL: ${EVAL_MODEL:-claude-opus-5}
-      # the worker runs the same production posture check as the API — it
-      # needs the same posture inputs to pass it
-      ENVIRONMENT: ${ENVIRONMENT:-dev}
-      SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
-      CANDIDATE_LINK_SECRET: ${CANDIDATE_LINK_SECRET:-dev-candidate-secret-change-me}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
-      JUDGE0_AUTH_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-}
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
-      DEV_DEFAULT_ORG: ${DEV_DEFAULT_ORG:-false}
     depends_on:
       redis:
         condition: service_healthy
@@ -151,30 +126,27 @@ services:
         condition: service_healthy
     command: python -m app.eval.worker
 
-  # Local LiveKit server. Keys come from .env (dev falls back to the public
-  # devkey/secret pair — production posture refuses that pair at API boot).
+  # Local LiveKit server (dev mode: key "devkey", secret "secret").
   # Swap for LiveKit Cloud creds in .env for representative latency numbers.
   livekit:
     restart: unless-stopped
     image: livekit/livekit-server:v1.13.5
-    command: ['--bind', '0.0.0.0', '--keys', '${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}']
+    command: --dev --bind 0.0.0.0
     ports:
       - "7880:7880"       # websocket / API
       - "7881:7881"       # WebRTC over TCP fallback
       - "50000-50060:50000-50060/udp"
     environment:
-      # correct LiveKit keys are rtc.port_range_start/end — the previous
-      # RTC_UDP_* names matched nothing, so ICE used its default 50000-60000
-      # while compose only published 50000-50060 (media could pick an
-      # unreachable port)
-      LIVEKIT_RTC_PORT_RANGE_START: "50000"
-      LIVEKIT_RTC_PORT_RANGE_END: "50060"
+      LIVEKIT_RTC_UDP_PORT_RANGE_START: "50000"
+      LIVEKIT_RTC_UDP_PORT_RANGE_END: "50060"
       LIVEKIT_RTC_USE_EXTERNAL_IP: "false"
 
   # T3: Yjs CRDT sync server for the collaborative editor
   y-websocket:
     restart: unless-stopped
-    build: ./y-websocket-server
+    image: node:20-alpine
+    # v2+ dropped the bundled server binary; v1's server speaks the same sync protocol
+    command: sh -c "npx -y y-websocket@1"
     environment:
       HOST: 0.0.0.0
       PORT: 1234
@@ -186,27 +158,11 @@ services:
   judge0:
     restart: unless-stopped
     profiles: ["sandbox"]
-    image: judge0/judge0:latest
+    image: judge0/judge0:1.13.1
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
-    tmpfs:
-      - /box:size=100M
-      - /tmp:size=100M
-      - /sys/fs/cgroup/memory:size=100M
-      - /sys/fs/cgroup/cpuacct:size=100M
-      - /sys/fs/cgroup/blkio:size=100M
-      - /sys/fs/cgroup/pids:size=100M
-    environment:
-      # empty disables AUTHN (dev); production posture requires it set
-      AUTHN_HEADER: X-Auth-Token
-      AUTHN_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
-      ENABLE_CGROUPS: "false"
-      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: "true"
-      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: "true"
     ports:
-      # loopback only — the API container reaches it on the compose network;
-      # a privileged code-execution service must never face the LAN
-      - "127.0.0.1:2358:2358"
+      - "2358:2358"
     privileged: true
     depends_on:
       - judge0-db
@@ -221,21 +177,10 @@ services:
   judge0-workers:
     restart: unless-stopped
     profiles: ["sandbox"]
-    image: judge0/judge0:latest
+    image: judge0/judge0:1.13.1
     command: ["./scripts/workers"]
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
-    tmpfs:
-      - /box:size=100M
-      - /tmp:size=100M
-      - /sys/fs/cgroup/memory:size=100M
-      - /sys/fs/cgroup/cpuacct:size=100M
-      - /sys/fs/cgroup/blkio:size=100M
-      - /sys/fs/cgroup/pids:size=100M
-    environment:
-      ENABLE_CGROUPS: "false"
-      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: "true"
-      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: "true"
     privileged: true
     depends_on:
       - judge0-db
@@ -281,10 +226,6 @@ services:
       CONDUCT_MODEL: ${CONDUCT_MODEL:-claude-haiku-4-5}
       TTS_PRIMARY: ${TTS_PRIMARY:-deepgram}
       TURN_DETECTOR: ${TURN_DETECTOR:-stt}
-      DEEPGRAM_ENDPOINTING_MS: ${DEEPGRAM_ENDPOINTING_MS:-500}
-      ENVIRONMENT: ${ENVIRONMENT:-dev}
-    volumes:
-      - ./prompts:/prompts:ro
     depends_on:
       livekit:
         condition: service_started
@@ -301,9 +242,6 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
         NEXT_PUBLIC_YWS_URL: ${NEXT_PUBLIC_YWS_URL:-ws://localhost:1234}
-        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
-        NEXT_PUBLIC_ORG_NAME: ${NEXT_PUBLIC_ORG_NAME:-}
-        NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-}
     ports:
       - "3000:3000"
 
@@ -311,8 +249,3 @@ volumes:
   pgdata:
   minio-data:
   judge0-pgdata:
-
-networks:
-  default:
-    name: process
-    external: true

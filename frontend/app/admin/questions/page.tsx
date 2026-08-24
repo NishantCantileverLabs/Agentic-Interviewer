@@ -148,7 +148,7 @@ export default function QuestionsPage() {
       body: JSON.stringify(body),
     });
     if (!resp.ok) return setMsg({ ok: false, text: await resp.text() });
-    setMsg({ ok: true, text: `Question "${title}" added. It can now be assigned from Conduct interview.` });
+    setMsg({ ok: true, text: `Question "${title}" added — it can now be assigned from Conduct interview.` });
     setTitle(""); setStatement(""); setSolution(""); setTwist("");
     setVisible([emptyCase("v", 1)]); setHidden([emptyCase("h", 1)]); setHints(["", "", ""]);
     void refresh();
@@ -170,7 +170,7 @@ export default function QuestionsPage() {
                 <td>{q.language_targets.join(", ")}</td>
                 <td>{q.difficulty}</td>
                 <td>{q.hidden_test_count}</td>
-                <td>{q.has_twist ? "✓" : "-"}</td>
+                <td>{q.has_twist ? "✓" : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -208,7 +208,7 @@ export default function QuestionsPage() {
         <b>Problem statement (candidate sees this)</b>
         <textarea className="notes doc-area" value={statement}
           onChange={(e) => setStatement(e.target.value)}
-          placeholder="Markdown. State input/output format precisely. Tests compare stdout exactly." />
+          placeholder="Markdown. State input/output format precisely — tests compare stdout exactly." />
         <b>Reference solution (admin-only; stored for review, never exposed via API)</b>
         <textarea className="notes doc-area" value={solution}
           onChange={(e) => setSolution(e.target.value)} placeholder="Optional reference solution." />
@@ -217,17 +217,17 @@ export default function QuestionsPage() {
           showSql={isSql} note="Shown to the candidate in the Run panel with full output." />
         <CaseEditor label="Hidden tests" cases={hidden} setCases={setHidden} prefix="h"
           showSql={isSql}
-          note="Run on submit; the candidate only ever sees pass/fail. Expected outputs never leave the backend." />
+          note="Run on submit; the candidate only ever sees pass/fail — expected outputs never leave the backend." />
 
         <b>Graduated hints (engine-controlled escalation)</b>
-        {["Level 1: nudge", "Level 2: direction", "Level 3: partial approach"].map((lbl, i) => (
+        {["Level 1 — nudge", "Level 2 — direction", "Level 3 — partial approach"].map((lbl, i) => (
           <input key={i} className="notes" style={{ margin: "4px 0" }} placeholder={lbl}
             value={hints[i]}
             onChange={(e) => setHints((h) => h.map((x, j) => (j === i ? e.target.value : x)))} />
         ))}
         <b style={{ display: "block", marginTop: 10 }}>Twist (optional requirement change)</b>
         <input className="notes" value={twist} onChange={(e) => setTwist(e.target.value)}
-          placeholder='e.g. "Now the input no longer fits in memory. Adapt your approach."' />
+          placeholder='e.g. "Now the input no longer fits in memory — adapt your approach."' />
 
         <button className="submit-btn" onClick={save}>Add question</button>
         {msg && <p style={{ color: msg.ok ? "#3fb950" : "#f85149" }}>{msg.text}</p>}

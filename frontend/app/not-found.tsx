@@ -16,7 +16,7 @@ export default function NotFound() {
         </h1>
         <p className="mt-2 text-base leading-relaxed text-ink-soft">
           If you followed an interview link, check it matches your invitation email
-          exactly, or ask the team for a fresh one.
+          exactly — or ask the team for a fresh one.
         </p>
         <div className="mt-5 flex items-center justify-center gap-4 text-base">
           <Link href="/" className="text-accent underline-offset-4 hover:underline">

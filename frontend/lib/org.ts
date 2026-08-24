@@ -178,25 +178,12 @@ export interface EvaluationView {
       }
     >;
     degraded?: boolean;
-    /** why the evaluation degraded (provider failure, empty transcript, …) */
-    degraded_reason?: string;
   };
   signals: Record<string, unknown>;
   created_at: string;
 }
 
 export const sessionEvaluation = (id: string) => req<EvaluationView>(`/sessions/${id}/evaluation`);
-
-/** Operator health of the evaluation pipeline (queue depth, dead-letter,
- * sessions completed but never evaluated). */
-export interface EvalHealth {
-  queue_depth: number;
-  dead_letter: number;
-  stuck_sessions: number;
-  healthy: boolean;
-}
-
-export const evalHealth = () => req<EvalHealth>("/metrics/eval-health");
 
 export interface BriefView {
   id: string;
