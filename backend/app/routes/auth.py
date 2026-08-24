@@ -134,12 +134,25 @@ def _org_has_members(db: DbSession) -> bool:
 
 def _assert_staff_signup_allowed(db: DbSession, email: str) -> None:
     """Staff accounts are invite-only. The single exception: an org with no
-    members yet — the first account bootstraps as the owning admin."""
-    if _org_has_members(db) and _staff_invite_for(db, email) is None:
+    members yet — the first account bootstraps as the owning admin (in
+    production, only the FIRST_ADMIN_EMAIL may claim that bootstrap)."""
+    if _org_has_members(db):
+        if _staff_invite_for(db, email) is None:
+            raise HTTPException(
+                403,
+                "recruiter accounts are invite-only — ask an admin of your "
+                "organization to invite this email from Settings",
+            )
+        return
+    settings = get_settings()
+    if (
+        settings.environment == "production"
+        and email.lower() != settings.first_admin_email.lower()
+    ):
         raise HTTPException(
             403,
-            "recruiter accounts are invite-only — ask an admin of your organization "
-            "to invite this email from Settings",
+            "this deployment's first admin account is reserved — staff access "
+            "is invite-only",
         )
 
 
@@ -155,7 +168,19 @@ def _ensure_staff_membership(db: DbSession, user: User) -> None:
         db.add(Membership(user_id=user.id, org_id=invite.org_id, role=invite.role))
         invite.accepted_at = datetime.now(UTC)
     elif not _org_has_members(db):
-        # first account in an empty org: the owner
+        # first account in an empty org: the owner. In production this race
+        # is closed to one named email — otherwise whoever registers first on
+        # a fresh deploy owns the org.
+        settings = get_settings()
+        if (
+            settings.environment == "production"
+            and user.email.lower() != settings.first_admin_email.lower()
+        ):
+            raise HTTPException(
+                403,
+                "this deployment's first admin account is reserved — staff access "
+                "is invite-only",
+            )
         db.add(Membership(user_id=user.id, org_id=DEFAULT_ORG_ID, role="admin"))
     else:
         raise HTTPException(
@@ -378,25 +403,86 @@ _DEMO_COMPETENCIES = [
 _TERMINAL = ("completed", "in_review", "reviewed", "withdrawn")
 
 
+# Practice interviews live in their own org so demo candidacies, sessions,
+# and evaluations never mix into a real tenant's pipeline, queue, or metrics.
+DEMO_ORG_ID = uuid.UUID("00000000-0000-0000-0000-00000000d0e0")
+
+
+def _ensure_demo_org(db: DbSession) -> uuid.UUID:
+    from app.models import Org
+
+    if db.get(Org, DEMO_ORG_ID) is None:
+        db.add(Org(id=DEMO_ORG_ID, name="Practice interviews", settings={}))
+        db.flush()
+    return DEMO_ORG_ID
+
+
 def _ensure_demo_plan(db: DbSession) -> uuid.UUID:
     """Idempotent: one short practice plan (marked role_config_id='demo' so it
-    never becomes the default-interview fallback)."""
+    never becomes the default-interview fallback). Plan AND question live in
+    the demo org — a cross-org reference would be unreadable under RLS."""
     from app.models import InterviewPlan, Question
 
+    _ensure_demo_org(db)
     existing = db.scalar(
         select(InterviewPlan)
-        .where(InterviewPlan.plan["role_config_id"].astext == "demo")
+        .where(
+            InterviewPlan.plan["role_config_id"].astext == "demo",
+            InterviewPlan.org_id == DEMO_ORG_ID,
+        )
         .limit(1)
     )
     if existing is not None:
         return existing.id
-    question = db.scalar(select(Question).where(Question.title == "Sum two ints").limit(1))
-    coding: dict[str, Any] = {"id": "coding", "type": "coding", "minutes": 6}
-    if question is not None:
-        coding["question"] = str(question.id)
+    question = db.scalar(
+        select(Question)
+        .where(Question.title == "Sum two ints", Question.org_id == DEMO_ORG_ID)
+        .limit(1)
+    )
+    if question is None:
+        question = Question(
+            id=uuid.uuid4(),
+            org_id=DEMO_ORG_ID,
+            title="Sum two ints",
+            statement_md=(
+                "# Sum two ints\n\nRead two integers, one per line, from standard "
+                "input and print their sum.\n\nPrint only the number — nothing else."
+            ),
+            language_targets=["python", "javascript"],
+            visible_tests={
+                "cases": [
+                    {"id": "v1", "stdin": "2\n3\n", "expected_output": "5"},
+                    {"id": "v2", "stdin": "-7\n7\n", "expected_output": "0"},
+                ]
+            },
+            hidden_tests={
+                "cases": [
+                    {"id": "h1", "stdin": "100000\n250000\n", "expected_output": "350000"},
+                    {"id": "h2", "stdin": "-1\n-1\n", "expected_output": "-2"},
+                ]
+            },
+            hints={
+                "levels": [
+                    "Read each line separately and convert to int before adding.",
+                    "input() returns a string — int(input()) parses one line.",
+                    "print(int(input()) + int(input())) is enough.",
+                ]
+            },
+            twist=None,
+            difficulty=1,
+            reference_solution="print(int(input()) + int(input()))",
+        )
+        db.add(question)
+        db.flush()
+    coding: dict[str, Any] = {
+        "id": "coding",
+        "type": "coding",
+        "minutes": 6,
+        "question": str(question.id),
+    }
     plan = InterviewPlan(
         id=uuid.uuid4(),
-        org_id=DEFAULT_ORG_ID,
+        org_id=DEMO_ORG_ID,
         plan={
             "role_config_id": "demo",
             "rounds": [
@@ -420,6 +506,8 @@ def start_demo(claims: dict[str, Any] = Depends(_bearer)) -> dict[str, Any]:
     In-flight demos are reused; hard cap per account."""
     if claims["typ"] != "candidate":
         raise HTTPException(403, "demo interviews are for candidate accounts")
+    if not get_settings().demo_enabled:
+        raise HTTPException(404, "practice interviews are not enabled on this deployment")
     db = _identity_db()
     try:
         email = str(claims["email"])
@@ -435,7 +523,7 @@ def start_demo(claims: dict[str, Any] = Depends(_bearer)) -> dict[str, Any]:
             raise HTTPException(409, "demo limit reached for this account")
         cand = Candidacy(
             id=uuid.uuid4(),
-            org_id=DEFAULT_ORG_ID,
+            org_id=_ensure_demo_org(db),
             candidate_email=email,
             candidate_name=str(claims.get("name") or email.split("@")[0]),
             source="demo",

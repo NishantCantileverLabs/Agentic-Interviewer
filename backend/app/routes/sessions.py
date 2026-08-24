@@ -54,7 +54,7 @@ def create_session(
         candidate_label=body.candidate_label,
         role_config_id=body.role_config_id,
         plan_id=plan_id,
-        retention_days=body.retention_days,
+        retention_days=body.retention_days or get_settings().retention_days_default,
         jd_text=body.jd_text,
         resume_text=body.resume_text,
     )

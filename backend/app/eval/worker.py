@@ -51,6 +51,11 @@ def handle_job(payload: dict[str, object]) -> None:
 
 
 def main() -> None:
+    # same refuse-to-boot contract as the API — a worker with dev secrets in
+    # production is the same hole through a different door
+    from app.config import validate_production_posture
+
+    validate_production_posture()
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     settings = get_settings()
