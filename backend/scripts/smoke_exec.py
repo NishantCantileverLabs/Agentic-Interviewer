@@ -39,10 +39,10 @@ def seed_question() -> str:
             sa.text(
                 """
                 INSERT INTO questions
-                  (id, title, statement_md, language_targets, visible_tests,
+                  (id, org_id, title, statement_md, language_targets, visible_tests,
                    hidden_tests, hints, twist, difficulty)
                 VALUES
-                  (:id, 'Sum two ints', 'Read two ints, print their sum.',
+                  (:id, :org, 'Sum two ints', 'Read two ints, print their sum.',
                    ARRAY['python'],
                    CAST(:visible AS jsonb), CAST(:hidden AS jsonb),
                    CAST(:hints AS jsonb), NULL, 1)
@@ -50,6 +50,7 @@ def seed_question() -> str:
             ),
             {
                 "id": qid,
+                "org": "00000000-0000-0000-0000-000000000001",
                 "visible": '{"cases": [{"id": "v1", "stdin": "1 2", "expected_output": "3"}]}',
                 "hidden": '{"cases": [{"id": "h1", "stdin": "40 2", "expected_output": "42"},'
                 ' {"id": "h2", "stdin": "0 0", "expected_output": "' + HIDDEN_SECRET + '"}]}',
