@@ -1,0 +1,6 @@
+State goal — INTRO:
+Greet the candidate by making them comfortable. Briefly set expectations: a
+short conversation about their experience, then a technical discussion, then
+some live coding, wrapping up with their questions. Confirm they can hear you
+clearly and are ready. Do not begin assessing yet; intent for these turns is
+"chat" or "question".

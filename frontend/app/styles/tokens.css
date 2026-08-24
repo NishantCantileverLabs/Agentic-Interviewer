@@ -1,0 +1,50 @@
+/* Design tokens + Tailwind layers for the F0-F9 platform surfaces.
+   Imported ONLY by the new shells / dev route, never the root layout, so the
+   legacy pages (/interview, /admin, /portal) keep their own CSS and are not
+   touched by Tailwind's preflight reset. */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --ring: 0 0 0 3px rgba(11, 107, 112, 0.28);
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: theme("colors.paper");
+    color: theme("colors.ink.DEFAULT");
+    font-family: theme("fontFamily.body");
+    font-size: theme("fontSize.base[0]");
+  }
+  /* Visible focus everywhere (FRONTEND.md rule 7) */
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--ring);
+    border-radius: 4px;
+  }
+  ::selection {
+    background: theme("colors.accent.tint");
+  }
+}
+
+@layer utilities {
+  /* the event-rail signature: a ruled track with tick marks */
+  .rail-line {
+    background-image: linear-gradient(theme("colors.line") 0 0);
+    background-size: 1px 100%;
+    background-repeat: no-repeat;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-live-pulse,
+    .animate-orb-ring {
+      animation: none !important;
+    }
+  }
+}
