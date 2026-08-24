@@ -93,9 +93,17 @@ class Judge0Client:
             "memory_limit": settings.exec_mem_mb * 1000,  # Judge0 takes KB
             "enable_network": False,
         }
+        # AUTHN: judge0.conf's AUTHN_TOKEN must match (production posture
+        # requires it — an open Judge0 is arbitrary code execution)
+        headers = (
+            {"X-Auth-Token": settings.judge0_auth_token}
+            if settings.judge0_auth_token
+            else {}
+        )
         self._client = httpx.AsyncClient(
             base_url=base_url or settings.judge0_url,
             timeout=httpx.Timeout(30.0, connect=5.0),
+            headers=headers,
         )
 
     async def run(self, language: str, source: str, stdin: str = "") -> dict[str, Any]:

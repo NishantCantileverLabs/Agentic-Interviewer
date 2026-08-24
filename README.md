@@ -68,7 +68,7 @@ Deferred services: `--profile editor` (y-websocket, T3), `--profile sandbox` (Ju
 ```
 /backend    FastAPI control plane, alembic, providers/ (LLM abstraction)
 /agent      LiveKit Agents voice worker (T1+)
-/worker     async evaluation pipeline (T6)
+/worker     RETIRED — eval runs as backend app/eval/worker (safe to delete)
 /frontend   Next.js 14 app
 /infra      judge0, seed scripts
 /prompts    versioned prompt files (file = source, DB = runtime record)

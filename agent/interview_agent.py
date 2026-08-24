@@ -56,6 +56,31 @@ from latency import LatencyTracker
 load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 log = logging.getLogger("interview-agent")
 
+
+def _validate_agent_posture() -> None:
+    """Mirror of backend app.config.validate_production_posture for the agent
+    process: in production, refuse to run on dev credentials instead of
+    silently authenticating with them."""
+    if os.environ.get("ENVIRONMENT", "dev").strip().lower() not in ("production", "prod"):
+        return
+    problems = []
+    if os.environ.get("INTERNAL_API_KEY", "dev-internal-key") == "dev-internal-key":
+        problems.append("INTERNAL_API_KEY: still the dev default")
+    if os.environ.get("LIVEKIT_API_KEY", "devkey") == "devkey":
+        problems.append("LIVEKIT_API_KEY: still the dev default")
+    if os.environ.get("LIVEKIT_API_SECRET", "secret") == "secret":
+        problems.append("LIVEKIT_API_SECRET: still the dev default")
+    if "localhost" in os.environ.get("BACKEND_URL", "http://localhost:8000"):
+        problems.append("BACKEND_URL: still points at localhost")
+    if problems:
+        raise RuntimeError(
+            "agent refusing to start in production posture — fix these first:\n"
+            + "\n".join(f"  x {p}" for p in problems)
+        )
+
+
+_validate_agent_posture()
+
 PROMPTS_DIR = pathlib.Path(__file__).parent.parent / "prompts" / "conduct"
 CONDUCT_MODEL = os.environ.get("CONDUCT_MODEL", "claude-haiku-4-5")
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic")
@@ -492,7 +517,10 @@ async def interview_session(ctx: agents.JobContext) -> None:
             interruption=InterruptionOptions(mode="vad", min_duration=0.6),
             # keep the early LLM start for latency, but never SPEAK before the
             # turn is committed — speaking early doubled responses.
-            preemptive_generation=PreemptiveGenerationOptions(enabled=True, preemptive_tts=False),
+            preemptive_generation=PreemptiveGenerationOptions(
+                enabled=os.environ.get("SPECULATIVE_GENERATION", "true").lower() != "false",
+                preemptive_tts=False,
+            ),
         ),
     )
 
