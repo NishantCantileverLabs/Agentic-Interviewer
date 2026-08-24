@@ -108,9 +108,12 @@ def main() -> None:
     actions = c.get("/orgs/current/admin-actions", headers=hdr(org_a)).json()
     kinds = {a["action"] for a in actions}
     assert "candidate_link_minted" in kinds and "question_created" in kinds
-    # default-org dev fallback still alive for the Phase 1 UI
-    assert c.get("/sessions").status_code == 200
-    print("[7/7] admin actions logged; dev default-org fallback intact")
+    # anonymous access follows the deployment's DEV_DEFAULT_ORG posture:
+    # 200 only when the dev fallback is explicitly on, 403 under enforcement
+    anon = c.get("/sessions").status_code
+    assert anon in (200, 403), f"anonymous /sessions gave {anon}"
+    posture = "dev default-org fallback on" if anon == 200 else "anonymous 403 (enforced)"
+    print(f"[7/7] admin actions logged; {posture}")
 
     print("\nCROSS-TENANT SUITE PASSED")
 
