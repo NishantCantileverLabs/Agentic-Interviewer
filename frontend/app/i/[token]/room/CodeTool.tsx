@@ -52,6 +52,20 @@ export function CodeTool({
   const [statementOpen, setStatementOpen] = useState(true);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const deltaBuffer = useRef<Delta[]>([]);
+  const yRef = useRef<{ doc: Y.Doc; provider: WebsocketProvider } | null>(null);
+
+  // Tear the CRDT down when the session changes or the tool unmounts.
+  // Without this the previous round's provider stayed connected and its
+  // Y.Doc alive, so a later round could bind to the earlier session's text.
+  useEffect(() => {
+    return () => {
+      yRef.current?.provider.destroy();
+      yRef.current?.doc.destroy();
+      yRef.current = null;
+      editorRef.current = null;
+      deltaBuffer.current = [];
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     const flushDeltas = setInterval(() => {
@@ -77,8 +91,12 @@ export function CodeTool({
   const onMount: OnMount = useCallback(
     (editor) => {
       editorRef.current = editor;
+      // a remount must not leave the old CRDT connected
+      yRef.current?.provider.destroy();
+      yRef.current?.doc.destroy();
       const doc = new Y.Doc();
       const provider = new WebsocketProvider(YWS_URL, `interview-${sessionId}`, doc);
+      yRef.current = { doc, provider };
       const model = editor.getModel();
       if (model) {
         const ytext = doc.getText("code");

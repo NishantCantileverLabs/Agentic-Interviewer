@@ -742,8 +742,13 @@ async def interview_session(ctx: agents.JobContext) -> None:
         last_code = ""
         last_seq = -1
         prev_shapes: list | None = None
+        last_run_summary: str | None = None
+        last_run_failures: list[str] = []
         while True:
-            await asyncio.sleep(15)
+            # code rounds poll fast: the candidate can ask "can you see my
+            # code?" at any moment and a 15s-old snapshot answers wrongly.
+            # Still off the voice path - this is a background task.
+            await asyncio.sleep(4 if conductor.in_code_round() else 15)
             if not session_id:
                 continue
             rid = conductor.es.round_id or ""
@@ -788,6 +793,22 @@ async def interview_session(ctx: agents.JobContext) -> None:
             runs = [e for e in events if e["type"] == "execution_result"]
             rid = conductor.es.round_id or ""
             if runs:
+                # remember across polls (each poll sees only NEW events)
+                _resp = runs[-1]["payload"].get("response", {})
+                _per = _resp.get("per_test", [])
+                _passed = sum(1 for t in _per if t.get("passed"))
+                last_run_summary = f"{_resp.get('status')} - {_passed}/{len(_per)} tests passed"
+                last_run_failures = []
+                for t in _per:
+                    if t.get("hidden") or t.get("passed"):
+                        continue
+                    detail = (t.get("stderr") or t.get("stdout") or "").strip()[:300]
+                    last_run_failures.append(
+                        f"failing_visible_test {t.get('id')}: "
+                        f"{t.get('status') or 'wrong output'}"
+                        + (f"\noutput: {detail}" if detail else "")
+                    )
+            if runs:
                 resp = runs[-1]["payload"].get("response", {})
                 per = resp.get("per_test", [])
                 visible = [t for t in per if not t.get("hidden")]
@@ -825,23 +846,14 @@ async def interview_session(ctx: agents.JobContext) -> None:
                 lines.append(f"current_code_in_editor:\n```\n{code[:3000]}\n```")
             else:
                 lines.append("current_code_in_editor: (editor is empty)")
-            if runs:
-                last_run = runs[-1]["payload"].get("response", {})
-                per = last_run.get("per_test", [])
-                passed = sum(1 for t in per if t.get("passed"))
-                status = last_run.get("status")
-                lines.append(f"last_run: {status} — {passed}/{len(per)} tests passed")
+            if last_run_summary:
+                lines.append(f"last_run: {last_run_summary}")
                 # VISIBLE failing tests only (the candidate already sees these);
-                # hidden-test expectations never enter context (invariant #3)
-                for t in per:
-                    if t.get("hidden") or t.get("passed"):
-                        continue
-                    detail = (t.get("stderr") or t.get("stdout") or "").strip()[:300]
-                    lines.append(
-                        f"failing_visible_test {t.get('id')}: "
-                        f"{t.get('status') or 'wrong output'}"
-                        + (f"\noutput: {detail}" if detail else "")
-                    )
+                # hidden-test expectations never enter context (invariant #3).
+                # Carried across polls: each poll sees only NEW events, so the
+                # run detail used to vanish from the model's view after one
+                # 15s window.
+                lines.extend(last_run_failures)
             if diff:
                 lines.append("recent_changes:\n" + diff)
             conductor.latest_observation = "\n".join(lines)

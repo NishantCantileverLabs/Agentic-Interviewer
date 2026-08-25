@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.main import app
-from app.tenancy import DEFAULT_ORG_ID, mint_candidate_token
+from app.tenancy import DEFAULT_ORG_ID
 
 DEV_ADMIN = {
     "X-Org-Id": str(DEFAULT_ORG_ID),
@@ -69,12 +69,21 @@ def test_session_create_rejects_anonymous(client: TestClient) -> None:
     assert resp.status_code == 403
 
 
+def _candidate_token(client: TestClient, session_id: str) -> str:
+    """Mint through the real endpoint so sessions.candidate_jti is bound.
+    A token minted in-process is deliberately invalid now: jti revocation is
+    enforced on every candidate request."""
+    resp = client.post(f"/sessions/{session_id}/candidate-link", headers=DEV_ADMIN)
+    assert resp.status_code == 200, resp.text
+    return str(resp.json()["candidate_token"])
+
+
 def test_candidate_token_is_session_scoped(client: TestClient) -> None:
     """A candidate link minted for session A must not read session B."""
     a = client.post("/sessions", headers=DEV_ADMIN, json={"candidate_label": "authz-a"})
     b = client.post("/sessions", headers=DEV_ADMIN, json={"candidate_label": "authz-b"})
     assert a.status_code == 201 and b.status_code == 201
-    token, _ = mint_candidate_token(uuid.UUID(a.json()["id"]), DEFAULT_ORG_ID)
+    token = _candidate_token(client, a.json()["id"])
     other = b.json()["id"]
     for path in (f"/sessions/{other}/replay", f"/sessions/{other}/evaluation",
                  f"/sessions/{other}/brief.html"):
@@ -85,7 +94,7 @@ def test_candidate_token_is_session_scoped(client: TestClient) -> None:
 def test_candidate_token_reads_its_own_session(client: TestClient) -> None:
     a = client.post("/sessions", headers=DEV_ADMIN, json={"candidate_label": "authz-own"})
     sid = a.json()["id"]
-    token, _ = mint_candidate_token(uuid.UUID(sid), DEFAULT_ORG_ID)
+    token = _candidate_token(client, sid)
     resp = client.get(f"/sessions/{sid}/replay?candidate_token={token}")
     assert resp.status_code == 200
 
@@ -104,6 +113,59 @@ def test_override_requires_real_rationale(client: TestClient) -> None:
 def test_hiring_stats_reject_candidate_role(client: TestClient) -> None:
     """Candidate-scoped tokens rank below every staff gate."""
     s = client.post("/sessions", headers=DEV_ADMIN, json={"candidate_label": "authz-c"})
-    token, _ = mint_candidate_token(uuid.UUID(s.json()["id"]), DEFAULT_ORG_ID)
+    token = _candidate_token(client, s.json()["id"])
     resp = client.get(f"/metrics/hiring?candidate_token={token}")
     assert resp.status_code == 403
+
+
+def test_candidate_token_revoked_on_rotation(client: TestClient) -> None:
+    """Re-minting a candidate link kills the previous token (jti rotation).
+    Before revocation was enforced, a superseded link kept full access for
+    its entire 24h TTL."""
+    s = client.post("/sessions", headers=DEV_ADMIN, json={"candidate_label": "authz-rev"})
+    sid = s.json()["id"]
+    old_token = _candidate_token(client, sid)
+    assert client.get(f"/sessions/{sid}/replay?candidate_token={old_token}").status_code == 200
+    new_token = _candidate_token(client, sid)  # rotation
+    assert client.get(f"/sessions/{sid}/replay?candidate_token={new_token}").status_code == 200
+    assert (
+        client.get(f"/sessions/{sid}/replay?candidate_token={old_token}").status_code == 401
+    ), "a rotated-out candidate link must stop working"
+
+
+def test_completed_session_cannot_reopen(client: TestClient) -> None:
+    """A finished interview is a one-way door: no status flip back to live,
+    no room token, no code execution."""
+    s = client.post("/sessions", headers=DEV_ADMIN, json={"candidate_label": "authz-closed"})
+    sid = s.json()["id"]
+    token = _candidate_token(client, sid)
+    assert client.patch(
+        f"/sessions/{sid}/status", headers=DEV_ADMIN, json={"status": "completed"}
+    ).status_code == 200
+    # staff cannot reopen it either
+    assert client.patch(
+        f"/sessions/{sid}/status", headers=DEV_ADMIN, json={"status": "in_progress"}
+    ).status_code == 409
+    assert client.get(f"/sessions/{sid}/token?candidate_token={token}").status_code == 409
+    assert client.post(
+        f"/execute?candidate_token={token}",
+        json={"session_id": sid, "language": "python", "source": "print(1)"},
+    ).status_code == 409
+
+
+def test_candidate_cannot_write_control_events(client: TestClient) -> None:
+    """A candidate-appended state_transition could move rebuilt engine state
+    off ENDED and resurrect a finished interview."""
+    s = client.post("/sessions", headers=DEV_ADMIN, json={"candidate_label": "authz-ctl"})
+    sid = s.json()["id"]
+    token = _candidate_token(client, sid)
+    blocked = client.post(
+        f"/sessions/{sid}/events?candidate_token={token}",
+        json={"events": [{"type": "state_transition", "payload": {"to": "r1"}}]},
+    )
+    assert blocked.status_code == 403, "candidates must not write control events"
+    allowed = client.post(
+        f"/sessions/{sid}/events?candidate_token={token}",
+        json={"events": [{"type": "paste", "payload": {"length": 12}}]},
+    )
+    assert allowed.status_code == 201, "candidate-owned events must still append"
