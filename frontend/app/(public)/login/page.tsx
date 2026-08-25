@@ -146,14 +146,14 @@ export default function LoginPage() {
           </p>
           <ol className="mt-4 flex flex-col gap-5 border-l border-line pl-5">
             <li className="relative">
-              <span aria-hidden className="absolute -left-[23px] top-1.5 h-2 w-2 rounded-full bg-accent" />
+              <span aria-hidden className="absolute -left-7 top-1.5 h-2 w-2 rounded-full bg-accent ring-4 ring-panel" />
               <div className="font-display text-md font-semibold text-ink">Recruiters</div>
               <p className="mt-0.5 text-sm leading-relaxed text-muted">
                 Your hiring console.
               </p>
             </li>
             <li className="relative">
-              <span aria-hidden className="absolute -left-[23px] top-1.5 h-2 w-2 rounded-full bg-ink" />
+              <span aria-hidden className="absolute -left-7 top-1.5 h-2 w-2 rounded-full bg-ink ring-4 ring-panel" />
               <div className="font-display text-md font-semibold text-ink">Candidates</div>
               <p className="mt-0.5 text-sm leading-relaxed text-muted">
                 Your interviews, one press to join.
