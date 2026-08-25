@@ -289,3 +289,7 @@ volumes:
   pgdata:
   minio-data:
   judge0-pgdata:
+
+networks:
+  default:
+    name: interview-platform
