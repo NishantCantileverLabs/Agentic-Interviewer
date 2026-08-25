@@ -36,6 +36,9 @@ from app.tenancy import (
 
 router = APIRouter()
 
+# candidacy states that must never start another interview
+_TERMINAL_CANDIDACY_STATUSES = ("completed", "in_review", "reviewed", "withdrawn")
+
 DEFAULT_POLICIES = {
     "audio_processing": (
         "Your interview audio is processed in real time to conduct the conversation "
@@ -461,6 +464,13 @@ def start_interview(
             403, f"required consent not granted under current policy: {missing}"
         )
 
+    if c.status in _TERMINAL_CANDIDACY_STATUSES:
+        # a finished candidacy does not spawn fresh interviews: the invite
+        # link is the only credential here, so without this check anyone
+        # holding it could re-open interviewing after completion
+        raise HTTPException(
+            409, f"this interview is already {c.status} and cannot be restarted"
+        )
     # Serialize concurrent starts for this candidacy (double-click, portal
     # retry): the check-then-create below is only idempotent under a lock.
     # Advisory xact lock releases automatically at commit/rollback.

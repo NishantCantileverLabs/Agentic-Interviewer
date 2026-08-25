@@ -22,6 +22,23 @@ from app.tenancy import (
 
 router = APIRouter()
 
+# a finished interview never goes back to live
+_TERMINAL_SESSION_STATUSES = ("completed", "aborted")
+
+# events that drive engine state / scoring — never written by a browser
+_CONTROL_EVENT_TYPES = frozenset({
+    "state_transition",
+    "hint_issued",
+    "twist_injected",
+    "execution_result",
+    "agent_turn",
+    "round_handoff",
+    "exhibit_revealed",
+    "turn_latency",
+    "error",
+    "fallback_triggered",
+})
+
 
 @router.post("/sessions", response_model=SessionOut, status_code=201)
 def create_session(
@@ -114,6 +131,17 @@ def append_events(
         raise HTTPException(404, "session not found")
     if not body.events:
         return {"appended": 0}
+    if ctx.role == "candidate":
+        # The browser reports what the CANDIDATE did (typing, pastes, runs,
+        # tab visibility). Control events drive engine state and the closure
+        # guards that read it, so they are service/staff only: appending a
+        # state_transition was enough to move rebuilt state off ENDED and
+        # resurrect a finished interview.
+        illegal = {e.type for e in body.events} & _CONTROL_EVENT_TYPES
+        if illegal:
+            raise HTTPException(
+                403, f"these event types are not writable by a candidate: {sorted(illegal)}"
+            )
 
     db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": str(session_id)})
 
@@ -234,6 +262,13 @@ def set_session_status(
         raise HTTPException(404, "session not found")
     if body.status not in SESSION_STATUSES:
         raise HTTPException(422, f"invalid status {body.status!r}")
+    if session.status in _TERMINAL_SESSION_STATUSES and body.status != session.status:
+        # completed/aborted is a one-way door. Without this, every other
+        # closure guard (room token, /execute, agent dispatch) was bypassable
+        # by simply flipping the session back to in_progress first.
+        raise HTTPException(
+            409, f"this interview is {session.status} and cannot be reopened"
+        )
     if body.status == "in_progress" and session.candidacy_id is not None:
         # Invariant #12: consent gate is API-enforced, not UI-enforced
         from app.routes.lifecycle import consent_missing

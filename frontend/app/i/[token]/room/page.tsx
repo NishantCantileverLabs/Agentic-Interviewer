@@ -245,12 +245,18 @@ export default function RoomPage() {
 
         {!conversationOnly && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
+            {/* key={sessionId}: a new session gets a FRESH tool instance.
+                Without it React reuses the mounted component, Monaco's
+                onMount never re-runs, and the editor stays bound to the
+                previous session's document. */}
             {tools.includes("editor") && (
-              <CodeTool sessionId={sessionId} question={question} />
+              <CodeTool key={sessionId} sessionId={sessionId} question={question} />
             )}
-            {tools.includes("canvas") && <CanvasTool sessionId={sessionId} />}
-            {tools.includes("exhibits") && <ExhibitsTool sessionId={sessionId} />}
-            {tools.includes("scratchpad") && <ScratchpadTool sessionId={sessionId} />}
+            {tools.includes("canvas") && <CanvasTool key={sessionId} sessionId={sessionId} />}
+            {tools.includes("exhibits") && <ExhibitsTool key={sessionId} sessionId={sessionId} />}
+            {tools.includes("scratchpad") && (
+              <ScratchpadTool key={sessionId} sessionId={sessionId} />
+            )}
           </div>
         )}
       </div>
