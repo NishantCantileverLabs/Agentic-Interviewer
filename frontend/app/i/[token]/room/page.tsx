@@ -50,9 +50,20 @@ export default function RoomPage() {
       setCreds(await getToken(sessionId));
       setDropped(false);
     } catch (e) {
+      // a finished interview refuses room tokens (409): route to the
+      // wrap-up screen instead of showing a join error
+      try {
+        const status = await getSessionStatus(sessionId);
+        if (status === "completed" || status === "aborted") {
+          router.push(`/i/${token}/next`);
+          return;
+        }
+      } catch {
+        /* fall through to the generic error */
+      }
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [sessionId]);
+  }, [sessionId, router, token]);
 
   useEffect(() => {
     void connect();

@@ -250,6 +250,17 @@ def set_session_status(
         session.started_at = now
     if body.status in ("completed", "aborted") and session.ended_at is None:
         session.ended_at = now
+    if body.status == "completed" and session.candidacy_id is not None:
+        # close the candidacy for plan-based interviews (practice included) —
+        # only the pipeline orchestrator managed this before, so single-round
+        # candidacies stayed "in_progress" forever and the portal kept
+        # offering re-entry into a finished interview
+        from app.models_phase23 import Candidacy, CandidacyProgress
+
+        if db.get(CandidacyProgress, session.candidacy_id) is None:
+            cand = db.get(Candidacy, session.candidacy_id)
+            if cand is not None and cand.status not in ("withdrawn", "reviewed"):
+                cand.status = "completed"
     db.commit()
 
     if body.status == "completed" and not was_completed:
@@ -286,6 +297,10 @@ def issue_room_token(
     session = db.get(Session, session_id)
     if session is None:
         raise HTTPException(404, "session not found")
+    if session.status in ("completed", "aborted"):
+        # a finished interview is closed: no room re-entry, no agent
+        # re-dispatch, no resumed context. The portal routes to /next.
+        raise HTTPException(409, "this interview has ended")
 
     room = session.livekit_room or f"interview-{session_id}"
     if session.livekit_room != room:
