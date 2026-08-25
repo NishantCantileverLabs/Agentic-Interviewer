@@ -104,7 +104,7 @@ export default function RolesPage() {
           <tbody>
             {roles.length === 0 && (
               <tr><td colSpan={5} style={{ color: "var(--faint)" }}>
-                No roles yet — create the first one above.
+                No roles yet. Create the first one above.
               </td></tr>
             )}
             {roles.map((r) => (

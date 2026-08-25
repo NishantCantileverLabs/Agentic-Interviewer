@@ -88,7 +88,7 @@ export default function LatencyDashboard() {
               <td><span className={`badge ${s.p50_ms <= data.targets.p50_ms ? "ok" : "bad"}`}>{s.p50_ms}ms</span></td>
               <td><span className={`badge ${s.p95_ms <= data.targets.p95_ms ? "ok" : "bad"}`}>{s.p95_ms}ms</span></td>
               <td>
-                {s.stage_p50_ms.eou ?? "—"} / {s.stage_p50_ms.llm_ttft ?? "—"} / {s.stage_p50_ms.tts_ttfb ?? "—"} ms
+                {s.stage_p50_ms.eou ?? "-"} / {s.stage_p50_ms.llm_ttft ?? "-"} / {s.stage_p50_ms.tts_ttfb ?? "-"} ms
               </td>
               <td><Spark values={s.recent_e2e_ms} target={data.targets.p50_ms} /></td>
             </tr>
@@ -107,8 +107,8 @@ export default function LatencyDashboard() {
               <td>{r.role}</td><td>{r.model}</td><td>{r.calls}</td>
               <td>{r.input_tokens.toLocaleString()}</td>
               <td>{r.output_tokens.toLocaleString()}</td>
-              <td>{r.avg_ttft_ms ? `${r.avg_ttft_ms}ms` : "—"}</td>
-              <td>{r.cost_estimate_usd ? `$${r.cost_estimate_usd}` : "—"}</td>
+              <td>{r.avg_ttft_ms ? `${r.avg_ttft_ms}ms` : "-"}</td>
+              <td>{r.cost_estimate_usd ? `$${r.cost_estimate_usd}` : "-"}</td>
             </tr>
           ))}
         </tbody>

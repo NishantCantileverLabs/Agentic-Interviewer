@@ -161,7 +161,7 @@ function CandidatesInner() {
               key: "role",
               header: "Role",
               sortValue: (r) => r.role_name ?? "",
-              render: (r) => r.role_name ?? <span className="text-muted">—</span>,
+              render: (r) => r.role_name ?? <span className="text-muted">-</span>,
             },
             {
               key: "status",
@@ -184,7 +184,7 @@ function CandidatesInner() {
                     })}
                   </span>
                 ) : (
-                  <span className="text-muted">—</span>
+                  <span className="text-muted">-</span>
                 ),
             },
             {
@@ -203,7 +203,7 @@ function CandidatesInner() {
           onRowClick={(r) => router.push(`/candidates/${r.id}`)}
           empty={
             <span>
-              No candidates match — clear the filters, or invite candidates from the
+              No candidates match. Clear the filters, or invite candidates from the
               Dashboard.
             </span>
           }

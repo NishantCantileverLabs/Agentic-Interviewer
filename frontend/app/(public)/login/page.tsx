@@ -272,7 +272,7 @@ export default function LoginPage() {
                 </p>
                 {devOtp && (
                   <p className="rounded-md border border-amber/40 bg-panel p-2.5 text-sm text-amber">
-                    Development mode (no email provider configured) — your code is{" "}
+                    Development mode (no email provider configured). Your code is{" "}
                     <b className="font-mono">{devOtp}</b>
                   </p>
                 )}
@@ -332,7 +332,7 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-8 text-sm text-muted">
-            Invited to interview? You don&apos;t need an account — use the personal link
+            Invited to interview? You don&apos;t need an account. Use the personal link
             from your invitation email.
           </p>
         </div>

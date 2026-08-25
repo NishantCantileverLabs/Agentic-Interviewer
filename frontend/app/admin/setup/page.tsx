@@ -32,7 +32,7 @@ const DEFAULT_ROUNDS: RoundDraft[] = [
   { id: "wrapup", type: "wrapup", minutes: 2, question: null },
 ];
 
-/** Interview builder: the backend owns what gets asked — this page just
+/** Interview builder: the backend owns what gets asked. This page just
  * authors the plan (rounds + questions + budgets) that drives everything. */
 export default function SetupPage() {
   const [candidateLink, setCandidateLink] = useState<string | null>(null);
@@ -102,7 +102,7 @@ export default function SetupPage() {
     setBusy(true);
     try {
       const configs = await (await authFetch(`${API}/role-configs`)).json();
-      if (!configs.length) throw new Error("no role config — run the seed script");
+      if (!configs.length) throw new Error("no role config. Run the seed script");
       const plan = {
         role_config_id: configs[0].name,
         rounds: rounds.map((r) => ({
@@ -153,7 +153,7 @@ export default function SetupPage() {
         <h1>New interview</h1>
         <p className="page-sub">
           Compose the next interview. The plan, job description, and resume are stored
-          server-side and drive the engine — every transition, question, and hint stays
+          server-side and drive the engine. Every transition, question, and hint stays
           auditable.
         </p>
 
@@ -223,7 +223,7 @@ export default function SetupPage() {
                       value={r.question ?? ""}
                       onChange={(e) => update(i, { question: e.target.value || null })}
                     >
-                      <option value="">— choose a question —</option>
+                      <option value="">choose a question</option>
                       {questionsFor(r.type).map((q) => (
                         <option key={q.id} value={q.id}>
                           {q.title} (difficulty {q.difficulty}, {q.hidden_test_count} hidden tests)

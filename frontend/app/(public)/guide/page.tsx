@@ -23,18 +23,18 @@ interface Live {
 }
 
 const STEPS = [
-  { n: "01", label: "Create a role", body: "Attach the interview it runs — one session or a multi-round pipeline." },
+  { n: "01", label: "Create a role", body: "Attach the interview it runs: one session or a multi-round pipeline." },
   { n: "02", label: "Invite", body: "Candidates schedule, consent, and join from one link." },
   { n: "03", label: "AI interviews", body: "Voice conversation with live coding, SQL, case, and design rounds." },
   { n: "04", label: "Evidence, then people", body: "Cited scores; borderline results go to your review queue." },
 ];
 
 const FEATURES = [
-  ["Live voice interviewer", "Real-time speech with fallbacks — candidates always know they've been heard."],
+  ["Live voice interviewer", "Real-time speech with fallbacks. Candidates always know they've been heard."],
   ["Real working tools", "Collaborative editor with sandboxed tests, exhibits, scratchpad, whiteboard."],
-  ["Numbers checked by code", "SQL re-executed, math verified — never graded by a model."],
+  ["Numbers checked by code", "SQL re-executed, math verified, never graded by a model."],
   ["Cited evaluations", "Every score links to the exact moment behind it."],
-  ["Full replay", "Transcript, code, and events — any moment reconstructed."],
+  ["Full replay", "Transcript, code, and events. Any moment reconstructed."],
   ["Human review", "Overrides need written rationale; nothing auto-rejects."],
   ["Calibration first", "AI scores stay in shadow mode until they match your reviewers."],
   ["Privacy built in", "Tenant isolation, enforced consent, one-call export or erase."],
@@ -91,7 +91,7 @@ export default function GuidePage() {
       <main className="mx-auto max-w-[1080px] px-5 pb-14">
         <section className="pt-12">
           <h1 className="max-w-[640px] font-display text-2xl font-semibold leading-tight">
-            Structured interviews with a voice AI — reviewed by people, backed by evidence.
+            Structured interviews with a voice AI, reviewed by people, backed by evidence.
           </h1>
         </section>
 

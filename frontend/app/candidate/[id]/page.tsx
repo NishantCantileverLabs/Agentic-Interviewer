@@ -125,7 +125,7 @@ export default function CandidatePortal() {
           <>
             <h1 style={{ textAlign: "center" }}>Hi {portal.candidate_name} 👋</h1>
             <p style={{ textAlign: "center" }}>
-              Here&apos;s what to expect from your interview — no trick surprises.
+              Here&apos;s what to expect from your interview. No trick surprises.
             </p>
             <div className="expect-grid">
               <div className="expect-item">
@@ -134,7 +134,7 @@ export default function CandidatePortal() {
                   <b>Talk with our AI interviewer</b>
                   <span>
                     A natural voice conversation about your experience. Think aloud, take your
-                    time — pauses are expected, and clarifying questions are welcome.
+                    time. Pauses are expected, and clarifying questions are welcome.
                   </span>
                 </div>
               </div>
@@ -213,7 +213,7 @@ export default function CandidatePortal() {
               </p>
             )}
             <p style={{ textAlign: "center", fontSize: 13.5 }}>
-              Choose a time that works for you — or start right away.
+              Choose a time that works for you, or start right away.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center", margin: "14px 0" }}>
               <input type="datetime-local" className="notes" style={{ maxWidth: 260 }}
@@ -225,7 +225,7 @@ export default function CandidatePortal() {
               </button>
               <br />
               <button className="ghost-btn" onClick={() => setStep("begin")}>
-                {portal.schedule ? "Keep my current time" : "Skip — I'm ready now"}
+                {portal.schedule ? "Keep my current time" : "Skip, I'm ready now"}
               </button>
             </div>
           </>

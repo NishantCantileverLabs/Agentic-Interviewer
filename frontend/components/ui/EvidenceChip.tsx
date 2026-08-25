@@ -18,7 +18,7 @@ export function EvidenceChip({ label, at, onSeek, missing }: EvidenceChipProps) 
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-rust/40 bg-panel px-2.5 py-0.5 text-xs text-rust">
         <span aria-hidden>▲</span>
-        evidence missing — flagged
+        evidence missing, flagged
       </span>
     );
   }

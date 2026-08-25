@@ -38,7 +38,7 @@ function labelIn(tz: string, d: Date, opts: Intl.DateTimeFormatOptions): string 
   return new Intl.DateTimeFormat(undefined, { ...opts, timeZone: tz }).format(d);
 }
 
-/** C4 — Schedule: date strip + slot grid in the candidate's timezone. */
+/** C4. Schedule: date strip + slot grid in the candidate's timezone. */
 export default function SchedulePage() {
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
@@ -109,8 +109,8 @@ export default function SchedulePage() {
                 {labelIn(tz, new Date(portal.schedule.slot_start), {
                   dateStyle: "medium",
                   timeStyle: "short",
-                })}{" "}
-                — choosing a new slot reschedules ({portal.schedule.reschedule_count} of{" "}
+                })}.{" "}
+                Choosing a new slot reschedules ({portal.schedule.reschedule_count} of{" "}
                 {RESCHEDULE_MAX} used).
               </p>
             )}
@@ -150,7 +150,7 @@ export default function SchedulePage() {
 
             {daySlots.length === 0 ? (
               <div className="mt-4 rounded-md bg-paper p-4 text-center text-muted">
-                No times available on this day — pick another day, or contact the team to
+                No times available on this day. Pick another day, or contact the team to
                 request more times.
               </div>
             ) : (

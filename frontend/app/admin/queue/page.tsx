@@ -48,7 +48,7 @@ export default function QueuePage() {
         <h1>Review queue</h1>
         <p className="page-sub">
           Inflows: degraded evaluations and borderline hire signals, oldest first. Overrides
-          require a written rationale — the API enforces it.
+          require a written rationale. The API enforces it.
         </p>
         {items.length === 0 && (
           <div className="card" style={{ color: "var(--muted)" }}>The queue is clear. 🎉</div>

@@ -33,7 +33,7 @@ const EXPECTED: Record<
   withdrawn: { label: "Withdrawn", tone: "slate", surface: "declined", locked: false, remind: false, reschedule: false, withdraw: false, sync: false, sendToReview: false, reviewActive: false },
 };
 
-describe("useVisibility — every §7 row", () => {
+describe("useVisibility: every §7 row", () => {
   for (const status of ALL_STATUSES) {
     it(status, () => {
       const v = useVisibility(status);
