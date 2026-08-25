@@ -13,7 +13,7 @@ import re
 import uuid
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 

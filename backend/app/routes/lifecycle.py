@@ -124,22 +124,28 @@ def list_candidacies(
     }
     # which candidacies have a decision brief (distinguishes "processing"
     # from "brief ready" in the §7 chip without a per-row roundtrip)
+    _cand_ids_for_briefs = [c.id for c in rows]
     briefed = {
         row[0]
         for row in db.execute(
             select(Session.candidacy_id)
             .join(Brief, Brief.session_id == Session.id)
-            .where(Session.candidacy_id.is_not(None))
+            .where(Session.candidacy_id.in_(_cand_ids_for_briefs))
             .distinct()
         ).all()
-    }
-    # latest completed session per candidacy (session-view link for R5/R6)
+    } if _cand_ids_for_briefs else set()
+    # latest session per candidacy (session-view link for R5/R6). Two columns
+    # for the listed candidacies only — loading every full Session ORM row
+    # (incl. jd_text/resume_text) unbounded was the audit finding.
+    cand_ids = [c.id for c in rows]
     latest_session: dict[uuid.UUID, str] = {}
-    for s in db.scalars(
-        select(Session).where(Session.candidacy_id.is_not(None)).order_by(Session.created_at)
-    ):
-        if s.candidacy_id is not None:
-            latest_session[s.candidacy_id] = str(s.id)
+    if cand_ids:
+        for cid, sid in db.execute(
+            select(Session.candidacy_id, Session.id)
+            .where(Session.candidacy_id.in_(cand_ids))
+            .order_by(Session.created_at)
+        ).all():
+            latest_session[cid] = str(sid)
     return [
         {
             "id": str(c.id),

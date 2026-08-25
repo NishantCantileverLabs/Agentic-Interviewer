@@ -92,22 +92,28 @@ def latency_metrics(
     ctx: OrgContext = Depends(require_role("reviewer")),
 ) -> dict[str, Any]:
     """Per-session voice latency stats from turn_latency events (T1 §2.3)."""
+    limit = max(1, min(limit, 100))  # unbounded ?limit= was a DoS lever
     recent_sessions = list(
         db.scalars(select(Session).order_by(Session.created_at.desc()).limit(limit))
     )
-    out = []
-    for s in recent_sessions:
-        rows = db.scalars(
+    # ONE query for all sessions' turn_latency events (was one per session)
+    sids = [s.id for s in recent_sessions]
+    by_session: dict[uuid.UUID, list[dict[str, Any]]] = {sid: [] for sid in sids}
+    if sids:
+        for row in db.scalars(
             select(InterviewEvent)
             .where(
-                InterviewEvent.session_id == s.id,
+                InterviewEvent.session_id.in_(sids),
                 InterviewEvent.type == "turn_latency",
             )
             .order_by(InterviewEvent.seq)
-        )
+        ):
+            by_session[row.session_id].append(row.payload)
+    out = []
+    for s in recent_sessions:
         turns = [
-            r.payload for r in rows
-            if "e2e_first_audio_s" in r.payload and not r.payload.get("summary")
+            p for p in by_session.get(s.id, [])
+            if "e2e_first_audio_s" in p and not p.get("summary")
         ]
         if not turns:
             continue
@@ -175,16 +181,32 @@ def list_sessions(
     db: DbSession = Depends(get_db),
     ctx: OrgContext = Depends(require_role("reviewer")),
 ) -> list[dict[str, Any]]:
-    sessions = db.scalars(select(Session).order_by(Session.created_at.desc()).limit(limit))
+    limit = max(1, min(limit, 200))  # unbounded ?limit= was a DoS lever
+    sessions = list(
+        db.scalars(select(Session).order_by(Session.created_at.desc()).limit(limit))
+    )
+    sids = [s.id for s in sessions]
+    # three grouped COUNTs instead of three queries PER session
+    def _counts(model) -> dict:  # noqa: ANN001
+        if not sids:
+            return {}
+        return {
+            row[0]: row[1]
+            for row in db.execute(
+                select(model.session_id, func.count(model.id))
+                .where(model.session_id.in_(sids))
+                .group_by(model.session_id)
+            ).all()
+        }
+
+    eval_counts = _counts(Evaluation)
+    human_counts = _counts(HumanEvaluation)
+    brief_counts = _counts(Brief)
     out = []
     for s in sessions:
-        has_eval = db.scalar(
-            select(func.count(Evaluation.id)).where(Evaluation.session_id == s.id)
-        )
-        has_human = db.scalar(
-            select(func.count(HumanEvaluation.id)).where(HumanEvaluation.session_id == s.id)
-        )
-        has_brief = db.scalar(select(func.count(Brief.id)).where(Brief.session_id == s.id))
+        has_eval = eval_counts.get(s.id, 0)
+        has_human = human_counts.get(s.id, 0)
+        has_brief = brief_counts.get(s.id, 0)
         out.append(
             {
                 "id": str(s.id),

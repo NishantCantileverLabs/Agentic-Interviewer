@@ -266,4 +266,13 @@ def generate_brief(db: DbSession, evaluation_id: uuid.UUID) -> uuid.UUID:
 
 
 def llm_call_count(db: DbSession, session_id: uuid.UUID) -> int:
-    return len(list(db.scalars(select(LLMCall.id).where(LLMCall.session_id == session_id))))
+    from sqlalchemy import func as _func
+
+    # COUNT in the DB — loading every id row to call len() scaled with the
+    # interview's LLM-call volume
+    return int(
+        db.scalar(
+            select(_func.count(LLMCall.id)).where(LLMCall.session_id == session_id)
+        )
+        or 0
+    )

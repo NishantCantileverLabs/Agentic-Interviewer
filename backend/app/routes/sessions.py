@@ -314,11 +314,15 @@ def issue_room_token(
 def replay(
     session_id: uuid.UUID,
     after_seq: int = -1,
+    limit: int = 5000,
     db: DbSession = Depends(get_db),
     ctx: OrgContext = Depends(get_org_context),
 ) -> list[InterviewEvent]:
     """Ordered event stream for a session (feeds T5 observation + T8 review).
-    `after_seq` supports incremental polling (only events with seq > after_seq)."""
+    `after_seq` supports incremental polling (only events with seq > after_seq);
+    `limit` caps the page — callers page by passing the last seq they saw.
+    A long interview's full log is tens of MB of jsonb, so an unbounded read
+    was a memory/latency hazard on every poll."""
     ensure_session_access(ctx, session_id)
     if db.get(Session, session_id) is None:
         raise HTTPException(404, "session not found")
@@ -327,6 +331,7 @@ def replay(
             select(InterviewEvent)
             .where(InterviewEvent.session_id == session_id, InterviewEvent.seq > after_seq)
             .order_by(InterviewEvent.seq)
+            .limit(max(1, min(limit, 20000)))
         )
     )
 

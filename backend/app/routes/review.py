@@ -41,12 +41,33 @@ def review_queue(
     thresholds = {**DEFAULT_THRESHOLDS, **((rc.thresholds or {}) if rc else {})}
     hire_thr = float(thresholds.get("hire", 3.6))
 
-    decided = set(db.scalars(select(ReviewDecision.session_id)))
+    evals = list(
+        db.scalars(select(Evaluation).order_by(Evaluation.created_at.desc()).limit(200))
+    )
+    ev_sids = {e.session_id for e in evals}
+    # scoped to the candidate evaluations (review_decisions is append-only and
+    # grows forever — loading every id was unbounded), and sessions batched
+    decided = (
+        set(
+            db.scalars(
+                select(ReviewDecision.session_id).where(
+                    ReviewDecision.session_id.in_(ev_sids)
+                )
+            )
+        )
+        if ev_sids
+        else set()
+    )
+    sessions_by_id = (
+        {x.id: x for x in db.scalars(select(Session).where(Session.id.in_(ev_sids)))}
+        if ev_sids
+        else {}
+    )
     queue: list[dict[str, Any]] = []
-    for ev in db.scalars(select(Evaluation).order_by(Evaluation.created_at.desc()).limit(200)):
+    for ev in evals:
         if ev.session_id in decided:
             continue
-        session = db.get(Session, ev.session_id)
+        session = sessions_by_id.get(ev.session_id)
         if session is None:
             continue
         entry = {
