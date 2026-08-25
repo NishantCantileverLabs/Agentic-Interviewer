@@ -82,6 +82,35 @@ def _validate_agent_posture() -> None:
 _validate_agent_posture()
 
 PROMPTS_DIR = pathlib.Path(__file__).parent.parent / "prompts" / "conduct"
+
+# Preemptive ("speculative") generation starts the conduct LLM on the interim
+# transcript, before the turn commits. It cannot help THIS agent, and the
+# reason is structural rather than tunable:
+#
+#   1. LiveKit builds the speculative call from the interim transcript plus
+#      the chat context AS IT STANDS - our on_user_turn_completed hook has
+#      not run yet, so the call carries no <engine_directive>: no editor
+#      observation, no hint policy, no math verdict.
+#   2. When the turn commits, the hook appends that directive to the user
+#      message, so LiveKit's guard (_transcripts_equivalent against
+#      raw_text_content, agent_activity.py) sees a changed message and
+#      discards the speculative work.
+#
+# Measured across real interview sessions: 68 invalidations, 0 uses - one
+# wasted conduct-LLM call per turn for zero latency benefit. (The T1 spike
+# agent, which injects no per-turn directive, does use it - which is why the
+# option looked worthwhile originally.)
+#
+# Making the guard pass would trade correctness for that latency: the reply
+# would be generated without the candidate's editor content or the hint
+# policy. So this stays OFF, and the env var is opt-in with a loud warning.
+_SPECULATIVE_GENERATION = os.environ.get("SPECULATIVE_GENERATION", "false").lower() == "true"
+if _SPECULATIVE_GENERATION:
+    logging.getLogger("interview-agent").warning(
+        "SPECULATIVE_GENERATION=true: every turn injects a per-turn engine "
+        "directive, so LiveKit will invalidate each speculative generation - "
+        "expect a wasted conduct-LLM call per turn and no latency gain"
+    )
 CONDUCT_MODEL = os.environ.get("CONDUCT_MODEL", "claude-haiku-4-5")
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic")
 TTS_PRIMARY = os.environ.get("TTS_PRIMARY", "deepgram")
@@ -547,8 +576,9 @@ async def interview_session(ctx: agents.JobContext) -> None:
             interruption=InterruptionOptions(mode="vad", min_duration=0.6),
             # keep the early LLM start for latency, but never SPEAK before the
             # turn is committed — speaking early doubled responses.
+            # off by design - see _SPECULATIVE_GENERATION above
             preemptive_generation=PreemptiveGenerationOptions(
-                enabled=os.environ.get("SPECULATIVE_GENERATION", "true").lower() != "false",
+                enabled=_SPECULATIVE_GENERATION,
                 preemptive_tts=False,
             ),
         ),
