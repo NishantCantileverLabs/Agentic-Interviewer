@@ -160,8 +160,12 @@ services:
       - "7881:7881"       # WebRTC over TCP fallback
       - "50000-50060:50000-50060/udp"
     environment:
-      LIVEKIT_RTC_UDP_PORT_RANGE_START: "50000"
-      LIVEKIT_RTC_UDP_PORT_RANGE_END: "50060"
+      # correct LiveKit keys are rtc.port_range_start/end — the previous
+      # RTC_UDP_* names matched nothing, so ICE used its default 50000-60000
+      # while compose only published 50000-50060 (media could pick an
+      # unreachable port)
+      LIVEKIT_RTC_PORT_RANGE_START: "50000"
+      LIVEKIT_RTC_PORT_RANGE_END: "50060"
       LIVEKIT_RTC_USE_EXTERNAL_IP: "false"
 
   # T3: Yjs CRDT sync server for the collaborative editor
