@@ -369,6 +369,8 @@ function EvaluationPane({
     return (
       <p className="mt-4 text-muted">
         No evaluation yet — it runs automatically when the interview completes.
+        If this session finished a while ago, the evaluation may have failed:
+        check eval health in Analytics, then re-run it.
       </p>
     );
   }
@@ -382,7 +384,12 @@ function EvaluationPane({
         model {evaluation.model} · v{evaluation.version} ·{" "}
         {new Date(evaluation.created_at).toLocaleString()}
         {evaluation.rubric.degraded && (
-          <span className="ml-2 text-rust">degraded — scores need human review</span>
+          <span className="ml-2 text-rust">
+            degraded — scores need human review
+            {evaluation.rubric.degraded_reason
+              ? ` (${String(evaluation.rubric.degraded_reason)})`
+              : ""}
+          </span>
         )}
       </p>
       {comps.length === 0 && <p className="text-muted">The rubric holds no competencies.</p>}
