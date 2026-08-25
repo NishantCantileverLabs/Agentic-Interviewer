@@ -135,7 +135,7 @@ export default function RolesPage() {
           ]}
           rows={roles ?? []}
           rowKey={(r) => r.id}
-          empty={<span>No roles yet — create the first one above.</span>}
+          empty={<span>No roles yet. Create the first one above.</span>}
         />
       </div>
     </div>

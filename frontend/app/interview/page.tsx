@@ -29,7 +29,7 @@ function Statement({ question }: { question: QuestionView | null }) {
     return (
       <div className="panel statement">
         <span className="console-hint">
-          No coding question assigned to this session&apos;s plan yet — run the seed script.
+          No coding question assigned to this session&apos;s plan yet. Run the seed script.
         </span>
       </div>
     );
@@ -150,7 +150,7 @@ export default function InterviewPage() {
           </p>
           {assigned ? (
             <p style={{ color: "#3fb950" }}>
-              ✓ Your interview has been set up for you — just press start.
+              ✓ Your interview has been set up for you. Just press start.
             </p>
           ) : (
             <div style={{ textAlign: "left", margin: "8px 0" }}>
@@ -166,7 +166,7 @@ export default function InterviewPage() {
                   </label>
                   <textarea className="notes doc-area" value={resumeText}
                     onChange={(e) => setResumeText(e.target.value)}
-                    placeholder="Paste your resume — the interviewer will ask about your actual experience." />
+                    placeholder="Paste your resume. The interviewer will ask about your actual experience." />
                 </div>
               )}
             </div>
@@ -263,7 +263,7 @@ export default function InterviewPage() {
             <div className="panel statement" style={{ flex: 1 }}>
               <h2>Conversation round</h2>
               <p style={{ color: "#8b949e" }}>
-                No tools needed here — just talk with the interviewer.
+                No tools needed here, just talk with the interviewer.
               </p>
             </div>
           )}

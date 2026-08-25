@@ -71,7 +71,7 @@ export default function AnalyticsPage() {
               <li>
                 <b>{health.stuck_sessions}</b> completed interview
                 {health.stuck_sessions === 1 ? "" : "s"} finished over 10 minutes ago
-                with no evaluation — these show as “Processing” to recruiters.
+                with no evaluation. These show as “Processing” to recruiters.
               </li>
             )}
             {health.dead_letter > 0 && (
@@ -94,7 +94,7 @@ export default function AnalyticsPage() {
 
       <section className="mt-6">
         <h2 className="mb-2 font-display text-md font-semibold text-ink">
-          Calibration — AI vs human agreement{" "}
+          Calibration: AI vs human agreement{" "}
           <span className="font-mono text-xs font-normal text-muted">
             n={cal?.n ?? "…"}
           </span>
@@ -154,7 +154,7 @@ export default function AnalyticsPage() {
             })}
           {(lat?.sessions ?? []).filter((s) => s.turns >= 3).length === 0 && (
             <p className="text-sm text-muted">
-              No measured sessions yet — latency rows appear after live interviews.
+              No measured sessions yet. Latency rows appear after live interviews.
             </p>
           )}
         </div>

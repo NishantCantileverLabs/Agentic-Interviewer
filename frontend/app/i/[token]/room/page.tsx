@@ -118,7 +118,7 @@ export default function RoomPage() {
           beaconQueue.current = [];
           void postEvents(sessionId, batch);
         })
-        .catch(() => undefined); // still offline — keep buffering
+        .catch(() => undefined); // still offline. Keep buffering
     }, 5_000);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
@@ -178,7 +178,7 @@ export default function RoomPage() {
           role="alert"
           className="flex items-center justify-center gap-3 border-b border-amber/40 bg-panel px-4 py-2 text-sm text-amber"
         >
-          Voice connection lost — reconnecting. Your work is safe and the interview
+          Voice connection lost. Reconnecting. Your work is safe and the interview
           resumes where it left off.
           <Button size="sm" variant="secondary" onClick={() => void connect()}>
             Reconnect now
@@ -219,7 +219,7 @@ export default function RoomPage() {
           >
             <div className="p-4 text-center">
               <p className="text-sm text-muted" aria-busy={!error}>
-                {error ?? "Connecting your voice line — a few seconds."}
+                {error ?? "Connecting your voice line. A few seconds."}
               </p>
               {error && (
                 <div className="mt-3">
@@ -244,7 +244,7 @@ export default function RoomPage() {
         )}
       </div>
 
-      {/* help drawer — technical help only */}
+      {/* help drawer. Technical help only */}
       <Drawer open={helpOpen} onClose={() => setHelpOpen(false)} title="Help">
         <div className="flex flex-col gap-4 text-base text-ink-soft">
           <div>
@@ -261,7 +261,7 @@ export default function RoomPage() {
           <div>
             <div className="font-medium text-ink">Still stuck?</div>
             <p className="mt-1 text-sm">
-              This link works on another computer — you can switch devices and resume.
+              This link works on another computer. You can switch devices and resume.
               For anything else, contact the team from your invitation email.
             </p>
           </div>

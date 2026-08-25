@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ButtonLink } from "../../components/ui";
 
 export const metadata: Metadata = {
-  title: "AI Interview — voice interviews with evidence",
+  title: "AI Interview - voice interviews with evidence",
   description:
     "A live voice AI conducts structured hiring interviews; every score cites its evidence; a human reviews every assessment.",
 };
@@ -15,11 +15,11 @@ export const metadata: Metadata = {
 const PILLARS = [
   {
     title: "A real interview, not a quiz",
-    body: "A live voice interviewer that listens, probes claims two levels deep, and adapts — with coding, SQL, case, and system-design rounds worked in real tools: a collaborative editor, exhibits with a calc scratchpad, a whiteboard.",
+    body: "A live voice interviewer that listens, probes claims two levels deep, and adapts, with coding, SQL, case, and system-design rounds worked in real tools: a collaborative editor, exhibits with a calc scratchpad, a whiteboard.",
   },
   {
     title: "Decisions that show their work",
-    body: "A second model evaluates the transcript against your rubric. Every competency score cites the exact moment behind it — two clicks from any number to the replay. Uncited scores are flagged, never hidden.",
+    body: "A second model evaluates the transcript against your rubric. Every competency score cites the exact moment behind it. Two clicks from any number to the replay. Uncited scores are flagged, never hidden.",
   },
   {
     title: "People stay in charge",
@@ -28,7 +28,7 @@ const PILLARS = [
 ];
 
 const PROOF = [
-  { k: "Complete record", v: "every word, keystroke, and hint — replayable" },
+  { k: "Complete record", v: "every word, keystroke, and hint, replayable" },
   { k: "Consent first", v: "nothing records before the candidate agrees" },
   { k: "Numbers checked by code", v: "SQL re-executed, math verified" },
   { k: "Calibrated", v: "AI scores earn trust against your reviewers first" },
@@ -73,7 +73,7 @@ export default function LandingPage() {
             Decisions that explain themselves.
           </h1>
           <p className="mt-4 max-w-[560px] text-md leading-relaxed text-ink-soft">
-            A live voice AI conducts the interview — coding, SQL, case, system design,
+            A live voice AI conducts the interview: coding, SQL, case, system design,
             behavioral. A second model scores it with cited evidence. A human reviews
             every assessment before anything is decided.
           </p>
@@ -122,7 +122,7 @@ export default function LandingPage() {
           <div className="max-w-[560px]">
             <h2 className="font-display text-lg font-semibold">Invited to interview?</h2>
             <p className="mt-2 text-md leading-relaxed text-ink-soft">
-              Your invitation email contains a personal link — open it and the flow walks
+              Your invitation email contains a personal link. Open it and the flow walks
               you through everything: what to expect, your consent, picking a time, and a
               system check before you begin. No account or download needed. You will need
               Chrome or Edge, a microphone, and a quiet room.
@@ -132,7 +132,7 @@ export default function LandingPage() {
               <Link href="/login" className="text-accent underline-offset-2 hover:underline">
                 Create a free candidate account
               </Link>{" "}
-              and take a ten-minute practice interview — no stakes, nothing shared.
+              and take a ten-minute practice interview. No stakes, nothing shared.
             </p>
           </div>
         </div>

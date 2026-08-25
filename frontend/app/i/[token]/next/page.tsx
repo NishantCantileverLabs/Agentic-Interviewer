@@ -17,7 +17,7 @@ interface AdvanceResult {
   reason?: string;
 }
 
-/** C9 — round transition. Asks the pipeline orchestrator what happens next:
+/** C9. Round transition. Asks the pipeline orchestrator what happens next:
  * another round (with an optional 2-minute break), a review gate, or done. */
 export default function NextRoundPage() {
   const { token } = useParams<{ token: string }>();
@@ -31,7 +31,7 @@ export default function NextRoundPage() {
     try {
       const resp = await fetch(`${API}/candidacies/${token}/advance`, { method: "POST" });
       if (resp.status === 404) {
-        // single-interview candidacy — no pipeline, straight to completion
+        // single-interview candidacy. No pipeline, straight to completion
         router.replace(`/i/${token}/done`);
         return;
       }
@@ -90,8 +90,8 @@ export default function NextRoundPage() {
                 Round complete
               </h1>
               <p className="mt-3 text-center text-ink-soft">
-                Nice work. The team will review this round and follow up by email —
-                nothing more to do today.
+                Nice work. The team will review this round and follow up by email.
+                Nothing more to do today.
               </p>
             </StepCard>
           );
@@ -127,7 +127,7 @@ export default function NextRoundPage() {
 
         return (
           <StepCard>
-            <p className="text-center text-muted">Wrapping up — one moment.</p>
+            <p className="text-center text-muted">Wrapping up, one moment.</p>
           </StepCard>
         );
       }}

@@ -24,7 +24,7 @@ interface Delta {
   text: string;
 }
 
-/** F4 — the working surface. Same process-capture contract as Phase 1:
+/** F4. The working surface. Same process-capture contract as Phase 1:
  * delta batches (500ms), snapshots (30s + on run), paste length, run clicks —
  * batched off the typing path. Yjs doc is live truth; the event log restores
  * it on rejoin. Hidden tests report pass/fail only, never expectations. */
@@ -96,7 +96,7 @@ export function CodeTool({
             const data = (await resp.json()) as { code?: string };
             if (data.code && ytext.length === 0) ytext.insert(0, data.code);
           } catch {
-            /* fresh session — nothing to restore */
+            /* fresh session. Nothing to restore */
           }
         };
         provider.on("sync", () => void restoreIfEmpty());
@@ -230,7 +230,7 @@ export function CodeTool({
                 {result.per_test.map((t) => (
                   <span
                     key={t.id}
-                    title={t.hidden ? "Hidden test — result only" : t.stdout || ""}
+                    title={t.hidden ? "Hidden test: result only" : t.stdout || ""}
                     className={cx(
                       "rounded-full px-2 py-0.5 font-mono text-xs",
                       t.passed ? "bg-panel text-green ring-1 ring-green/30" : "bg-panel text-rust ring-1 ring-rust/30",
@@ -255,7 +255,7 @@ export function CodeTool({
                   return (
                     <div key={t.id} className="rounded-md border border-rust/30 bg-paper p-2">
                       <div className="font-mono text-xs font-semibold text-rust">
-                        {t.id} failed{t.status && t.status !== "wrong_answer" ? ` — ${t.status}` : ""}
+                        {t.id} failed{t.status && t.status !== "wrong_answer" ? `: ${t.status}` : ""}
                       </div>
                       {t.stderr && (
                         <pre className="mt-1 overflow-x-auto font-mono text-xs text-rust">{t.stderr}</pre>
@@ -278,8 +278,8 @@ export function CodeTool({
                       )}
                       {spec && !t.stderr && (t.stdout ?? "").trim() !== spec.expected_output.trim() && (t.stdout ?? "").includes(spec.expected_output.trim()) && (
                         <p className="mt-1 text-xs text-muted">
-                          The expected value is in your output, but with extra text around it —
-                          print only the answer (e.g. input() prompts also count as output).
+                          The expected value is in your output, but with extra text around it.
+                          Print only the answer (e.g. input() prompts also count as output).
                         </p>
                       )}
                     </div>

@@ -67,14 +67,14 @@ export default function AdminDashboard() {
           </div>
           <div className="kpi">
             <div className="kpi-num">
-              {completionRate === null ? "—" : completionRate}
+              {completionRate === null ? "-" : completionRate}
               {completionRate !== null && <span className="unit">%</span>}
             </div>
             <div className="kpi-label">completion rate</div>
           </div>
           <div className={"kpi" + ((queueCount ?? 0) > 0 ? " alert" : "")}>
             <Link href="/admin/queue">
-              <div className="kpi-num">{queueCount ?? "—"}</div>
+              <div className="kpi-num">{queueCount ?? "-"}</div>
               <div className="kpi-label">awaiting review →</div>
             </Link>
           </div>
@@ -83,7 +83,7 @@ export default function AdminDashboard() {
             <div className="kpi-label">briefs ready</div>
           </div>
           <div className="kpi">
-            <div className="kpi-num">{stats?.interviewed ?? "—"}</div>
+            <div className="kpi-num">{stats?.interviewed ?? "-"}</div>
             <div className="kpi-label">candidates interviewed</div>
           </div>
         </div>
@@ -102,7 +102,7 @@ export default function AdminDashboard() {
                     <td>{r.invited}</td>
                     <td>{r.interviewed}</td>
                     <td style={{ color: "var(--muted)" }}>
-                      {r.invited > 0 ? `${Math.round((r.interviewed / r.invited) * 100)}%` : "—"}
+                      {r.invited > 0 ? `${Math.round((r.interviewed / r.invited) * 100)}%` : "-"}
                     </td>
                   </tr>
                 ))}
@@ -130,7 +130,7 @@ export default function AdminDashboard() {
           <tbody>
             {sessions.length === 0 && (
               <tr><td colSpan={6} style={{ color: "var(--faint)" }}>
-                No sessions yet — start one from <Link href="/admin/setup">New interview</Link>.
+                No sessions yet. Start one from <Link href="/admin/setup">New interview</Link>.
               </td></tr>
             )}
             {sessions.map((s) => (
@@ -142,8 +142,8 @@ export default function AdminDashboard() {
                 </td>
                 <td><StatusChip status={s.status} /></td>
                 <td>{new Date(s.created_at).toLocaleString()}</td>
-                <td>{s.ai_evaluations > 0 ? `✓ v${s.ai_evaluations}` : "—"}</td>
-                <td>{s.human_evaluations > 0 ? "✓" : "—"}</td>
+                <td>{s.ai_evaluations > 0 ? `✓ v${s.ai_evaluations}` : "-"}</td>
+                <td>{s.human_evaluations > 0 ? "✓" : "-"}</td>
                 <td>
                   <Link href={`/admin/review/${s.id}`}>review</Link>
                   {s.briefs > 0 && (

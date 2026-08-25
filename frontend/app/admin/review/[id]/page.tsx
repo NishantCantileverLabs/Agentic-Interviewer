@@ -73,7 +73,7 @@ export default function ReviewPage() {
           const p = e.payload as Record<string, string>;
           if (e.type === "stt_final") return <div key={e.seq}><b>Candidate:</b> {String(p.text)}</div>;
           if (e.type === "agent_turn") return <div key={e.seq}><b style={{ color: "#4f8ef7" }}>Interviewer:</b> {String(p.text)}</div>;
-          if (e.type === "state_transition") return <div key={e.seq} style={{ color: "#d29922" }}>— round: {String(p.to)} —</div>;
+          if (e.type === "state_transition") return <div key={e.seq} style={{ color: "#d29922" }}>round: {String(p.to)}</div>;
           if (e.type === "execution_result") {
             const resp = (e.payload as { response?: { status?: string } }).response;
             return <div key={e.seq} style={{ color: "#8b949e" }}>[code run: {resp?.status}]</div>;
@@ -106,7 +106,7 @@ export default function ReviewPage() {
             ))}
             {submitted && aiScores && (
               <span style={{ marginLeft: 16 }}>
-                AI: <b>{aiScores[c]?.score_1_to_5 ?? "—"}</b>
+                AI: <b>{aiScores[c]?.score_1_to_5 ?? "-"}</b>
                 {aiScores[c]?.score_1_to_5 !== undefined && scores[c] !== undefined &&
                   Math.abs((aiScores[c].score_1_to_5 as number) - scores[c]) >= 2 && (
                     <span className="badge bad" style={{ marginLeft: 8 }}>Δ ≥ 2</span>
@@ -123,7 +123,7 @@ export default function ReviewPage() {
         <button className="submit-btn" onClick={submit}>Submit blind review</button>
       ) : (
         <p style={{ color: "#3fb950", fontWeight: 700 }}>
-          Submitted — AI comparison shown above.{" "}
+          Submitted. AI comparison shown above.{" "}
           <Link href="/admin/calibration">Calibration report</Link>
           {" · "}
           <Link href={`/admin/brief/${id}`}>Decision brief</Link>

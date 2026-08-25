@@ -219,11 +219,11 @@ export default function QuestionsPage() {
           },
           { key: "diff", header: "Difficulty", sortValue: (q) => q.difficulty, render: (q) => q.difficulty },
           { key: "hidden", header: "Hidden tests", render: (q) => q.hidden_test_count },
-          { key: "twist", header: "Twist", render: (q) => (q.has_twist ? "✓" : "—") },
+          { key: "twist", header: "Twist", render: (q) => (q.has_twist ? "✓" : "-") },
         ]}
         rows={existing}
         rowKey={(q) => q.id}
-        empty={<span>No questions yet — add the first one below.</span>}
+        empty={<span>No questions yet. Add the first one below.</span>}
       />
 
       <section className="mt-8 flex flex-col gap-4 rounded-lg border border-line bg-panel p-5">
@@ -312,7 +312,7 @@ export default function QuestionsPage() {
         <div>
           <span className="text-sm font-medium text-ink-soft">Hints</span>
           <div className="mt-2 flex flex-col gap-2">
-            {["Level 1 — nudge", "Level 2 — direction", "Level 3 — partial approach"].map(
+            {["Level 1: nudge", "Level 2: direction", "Level 3: partial approach"].map(
               (lbl, i) => (
                 <Input
                   key={i}

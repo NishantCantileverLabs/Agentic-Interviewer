@@ -59,7 +59,7 @@ export default function ConfirmPage() {
 
         const downloadIcs = () => {
           const blob = new Blob(
-            [icsFor(portal.schedule!.slot_start, portal.schedule!.slot_end, `Interview${portal.role_name ? ` — ${portal.role_name}` : ""}`)],
+            [icsFor(portal.schedule!.slot_start, portal.schedule!.slot_end, `Interview${portal.role_name ? `: ${portal.role_name}` : ""}`)],
             { type: "text/calendar" },
           );
           const a = document.createElement("a");
@@ -109,7 +109,7 @@ export default function ConfirmPage() {
                 </button>
                 {atLimit ? (
                   <span className="text-muted">
-                    Reschedule limit reached — contact the team to change your time
+                    Reschedule limit reached. Contact the team to change your time
                   </span>
                 ) : (
                   <Link

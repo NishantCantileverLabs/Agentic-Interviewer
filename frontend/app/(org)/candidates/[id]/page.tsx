@@ -59,7 +59,7 @@ export default function CandidacyDetailPage() {
     if (resp.ok) {
       toast("Candidate withdrawn", "success");
       void load();
-    } else toast("Could not withdraw — try again", "error");
+    } else toast("Could not withdraw. Try again", "error");
   };
 
   return (
@@ -77,7 +77,7 @@ export default function CandidacyDetailPage() {
         <span className="font-mono text-xs text-muted">{detail.candidate_email}</span>
       </div>
 
-      {/* action bar — §7 */}
+      {/* action bar. §7 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {vis.actions.locked ? (
           <Button variant="secondary" size="sm" disabledReason={vis.actions.lockReason}>
@@ -150,7 +150,7 @@ export default function CandidacyDetailPage() {
             <div className="mt-4 flex flex-col gap-2">
               {detail.sessions.length === 0 && (
                 <p className="text-muted">
-                  No interviews yet — the candidate has not started.
+                  No interviews yet. The candidate has not started.
                 </p>
               )}
               {detail.sessions.map((s, i) => (
