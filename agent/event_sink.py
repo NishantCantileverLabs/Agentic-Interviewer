@@ -30,6 +30,7 @@ class EventSink:
         # not spurious retry churn (retries are idempotent via eid regardless)
         self._client = httpx.AsyncClient(base_url=BACKEND_URL, timeout=30, headers=_HEADERS)
         self._task: asyncio.Task[None] | None = None
+        self._closed = False
 
     def emit(self, type_: str, payload: dict[str, Any]) -> None:
         """Synchronous, non-blocking enqueue — safe to call from the voice path.
@@ -37,6 +38,9 @@ class EventSink:
         Each event carries a client id ("eid") so a retried flush — e.g. a
         timeout AFTER the server persisted the batch — can never duplicate
         events in the log (the server skips eids it has already stored)."""
+        if self._closed:
+            log.debug("event %s dropped: sink already closed", type_)
+            return
         self._queue.append({"type": type_, "payload": {**payload, "eid": uuid.uuid4().hex}})
 
     async def start(self) -> None:
@@ -57,12 +61,19 @@ class EventSink:
                 f"/sessions/{self._session_id}/events", json={"events": batch}
             )
             resp.raise_for_status()
-        except (httpx.HTTPError, Exception) as exc:  # noqa: BLE001 - never crash the voice path
+        except (TypeError, ValueError) as exc:
+            # poison batch (non-JSON-serializable payload): re-queueing would
+            # block every later event forever — drop it and say so loudly
+            log.error("dropping %d unserializable events: %s", len(batch), exc)
+        except Exception as exc:  # noqa: BLE001 - never crash the voice path
             log.warning("event flush failed (%s); re-queueing %d events", exc, len(batch))
             async with self._lock:
                 self._queue = batch + self._queue
 
     async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         if self._task:
             self._task.cancel()
         await self.flush()
@@ -93,7 +104,9 @@ class BackendClient:
             resp = await self._client.get(path)
             resp.raise_for_status()
             return resp.json()
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ValueError) as exc:
+            # ValueError: a 200 with a non-JSON body (proxy error page) must
+            # degrade like any other failed fetch, not kill the caller's loop
             log.warning("GET %s failed: %s", path, exc)
             return None
 
@@ -108,7 +121,13 @@ class BackendClient:
 
     async def log_llm_call(self, payload: dict[str, Any]) -> None:
         try:
-            await self._client.post("/llm-calls", json=payload)
+            resp = await self._client.post("/llm-calls", json=payload)
+            if resp.status_code >= 300:
+                # a 422 here means an unsynced prompt name — invariant #2's
+                # audit row was rejected, which must not pass silently
+                log.warning(
+                    "llm-call log rejected (%s): %s", resp.status_code, resp.text[:200]
+                )
         except httpx.HTTPError as exc:
             log.warning("llm-call log failed: %s", exc)
 

@@ -1,7 +1,8 @@
 """T11 — candidacies, invites, scheduling, consent (the legal load-bearing flow).
 
-Consent gate (invariant #12) is enforced in app.consent.check_consent_gate,
-called from the session status transition — API-level, not UI-level.
+Consent gate (invariant #12) is enforced by consent_missing() in this module,
+called from the session status transition (routes/sessions.py) and the
+start-interview path — API-level, not UI-level.
 """
 
 import uuid
@@ -10,7 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
@@ -174,7 +175,10 @@ def get_candidacy(
         for p in db.scalars(select(PolicyVersion).where(PolicyVersion.version == version))
     }
     consents = db.scalars(
-        select(ConsentRecord).where(ConsentRecord.candidacy_id == candidacy_id)
+        # ordered so the dict comprehension below is latest-wins per item
+        select(ConsentRecord)
+        .where(ConsentRecord.candidacy_id == candidacy_id)
+        .order_by(ConsentRecord.ts)
     )
     from app.models_phase23 import JobRole
 
@@ -239,7 +243,13 @@ def schedule_slot(
 
     slot_end = body.slot_start + timedelta(minutes=60)
 
-    # Org concurrency cap (the infra cost throttle)
+    # Org concurrency cap (the infra cost throttle). Serialized per org:
+    # count-then-insert under concurrency would let two bookings both pass
+    # a full window's check.
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"schedule:{c.org_id}"},
+    )
     org = db.get(Org, c.org_id)
     org_settings = (org.settings if org else None) or {}
     cap = int(
@@ -319,18 +329,24 @@ def record_consent(
 
 
 def consent_missing(db: DbSession, candidacy_id: uuid.UUID) -> list[str]:
-    """Required items not granted under the CURRENT policy version."""
+    """Required items not granted under the CURRENT policy version.
+
+    Latest record wins per item: a candidate who granted and later withdrew
+    (granted=False) counts as NOT granted — anything else makes revocation
+    a no-op."""
     version = get_settings().consent_policy_version
-    granted_items = set(
-        db.scalars(
-            select(ConsentRecord.item).where(
-                ConsentRecord.candidacy_id == candidacy_id,
-                ConsentRecord.granted.is_(True),
-                ConsentRecord.policy_version == version,
-            )
+    rows = db.execute(
+        select(ConsentRecord.item, ConsentRecord.granted)
+        .where(
+            ConsentRecord.candidacy_id == candidacy_id,
+            ConsentRecord.policy_version == version,
         )
-    )
-    return [i for i in REQUIRED_CONSENT_ITEMS if i not in granted_items]
+        .order_by(ConsentRecord.ts)
+    ).all()
+    latest: dict[str, bool] = {}
+    for item, granted in rows:
+        latest[item] = granted
+    return [i for i in REQUIRED_CONSENT_ITEMS if not latest.get(i, False)]
 
 
 @router.post("/candidacies/{candidacy_id}/decline")
@@ -439,12 +455,25 @@ def start_interview(
             403, f"required consent not granted under current policy: {missing}"
         )
 
+    # Serialize concurrent starts for this candidacy (double-click, portal
+    # retry): the check-then-create below is only idempotent under a lock.
+    # Advisory xact lock releases automatically at commit/rollback.
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"start-interview:{c.id}"},
+    )
     # Idempotent: an in-flight session (any round) means "rejoin", not "start
     # another". Re-mint the candidate link (jti rotation revokes the old one)
     # and hand back the same room — a reload or dropped tab never dead-ends.
+    # NOTE "in_progress", not "active": the agent sets in_progress, and the
+    # old filter's phantom status meant a reload mid-interview spawned a
+    # SECOND session instead of rejoining.
     live = db.scalars(
         select(Session)
-        .where(Session.candidacy_id == c.id, Session.status.in_(("created", "active")))
+        .where(
+            Session.candidacy_id == c.id,
+            Session.status.in_(("created", "in_progress", "paused")),
+        )
         .order_by(Session.created_at.desc())
         .limit(1)
     ).first()

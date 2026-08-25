@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DbSession
 
 from app.eval.brief import DEFAULT_THRESHOLDS, hire_signal
@@ -94,6 +94,26 @@ def submit_decision(
         # Invariant #10: overrides carry mandatory written rationale
         # (≥20 chars per the workflow spec — "n/a" is not a rationale)
         raise HTTPException(422, "override requires a written rationale (at least 20 characters)")
+    # Idempotency without violating append-only: a double-click (same
+    # reviewer, same decision, same rationale) returns the existing row
+    # instead of appending a duplicate. Different content still appends.
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"decision:{session_id}"},
+    )
+    dup = db.scalar(
+        select(ReviewDecision)
+        .where(
+            ReviewDecision.session_id == session_id,
+            ReviewDecision.reviewer_email == ctx.user_email,
+            ReviewDecision.decision == body.decision,
+            ReviewDecision.rationale == (body.rationale.strip() or "confirmed"),
+        )
+        .order_by(ReviewDecision.ts.desc())
+        .limit(1)
+    )
+    if dup is not None:
+        return {"id": str(dup.id)}
     row = ReviewDecision(
         org_id=session.org_id,
         session_id=session_id,
