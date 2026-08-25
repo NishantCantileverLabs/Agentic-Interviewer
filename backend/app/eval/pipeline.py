@@ -130,6 +130,46 @@ def build_transcript(events: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _store_degraded(
+    db: DbSession,
+    sid: uuid.UUID,
+    org_id: uuid.UUID,
+    competency_ids: list[str],
+    reason: str,
+    signals: dict[str, Any] | None = None,
+) -> uuid.UUID:
+    """Terminal record for a failed evaluation: degraded=True routes it to the
+    review queue (T15) so an operator sees it — never a silently dropped job
+    or a session stuck in Processing."""
+    version = (
+        db.scalar(
+            select(Evaluation.version)
+            .where(Evaluation.session_id == sid)
+            .order_by(Evaluation.version.desc())
+            .limit(1)
+        )
+        or 0
+    ) + 1
+    evaluation = Evaluation(
+        id=uuid.uuid4(),
+        org_id=org_id,
+        session_id=sid,
+        version=version,
+        model=get_settings().eval_model,
+        prompt_version_id=_prompt_version(db, "evaluate/scoring_v1").id,
+        rubric={
+            "competencies": {cid: {"evidence": []} for cid in competency_ids},
+            "degraded": True,
+            "degraded_reason": reason,
+        },
+        signals=signals or {},
+    )
+    db.add(evaluation)
+    db.commit()
+    log.error("degraded evaluation v%d stored for %s: %s", version, sid, reason)
+    return evaluation.id
+
+
 async def _call_model(
     db: DbSession,
     session_id: uuid.UUID,
@@ -139,16 +179,39 @@ async def _call_model(
 ) -> str:
     settings = get_settings()
     pv = _prompt_version(db, prompt_name)
-    provider = get_provider()
     request = LLMRequest(
         model=settings.eval_model,
         system_blocks=[ContextBlock(pv.content, cached=True)],
         messages=[{"role": "user", "content": user_content}],
         max_tokens=4000,
     )
-    result = await provider.complete(request)
-    _log_llm_call(db, session_id, org_id, pv, result)
-    return result.text
+    # provider failover (T9 for the eval path): primary, then the other
+    # configured provider — a single provider outage must not drop the job
+    order = [settings.llm_provider]
+    alt = "openrouter" if settings.llm_provider == "anthropic" else "anthropic"
+    alt_key = settings.openrouter_api_key if alt == "openrouter" else settings.anthropic_api_key
+    if alt_key:
+        order.append(alt)
+    last_exc: Exception | None = None
+    for name in order:
+        try:
+            provider = get_provider(name)
+            req = request
+            if name == "openrouter":
+                # OpenRouter needs its slug form of the model id
+                req = LLMRequest(
+                    model=f"anthropic/{settings.eval_model}",
+                    system_blocks=request.system_blocks,
+                    messages=request.messages,
+                    max_tokens=request.max_tokens,
+                )
+            result = await provider.complete(req)
+            _log_llm_call(db, session_id, org_id, pv, result)
+            return result.text
+        except Exception as exc:  # noqa: BLE001 - try the next tier
+            last_exc = exc
+            log.warning("eval provider %s failed for %s: %s", name, prompt_name, exc)
+    raise RuntimeError(f"all eval providers failed for {prompt_name}: {last_exc}")
 
 
 def _validate_evidence(
@@ -217,7 +280,13 @@ async def evaluate_session(session_id: str) -> uuid.UUID:
             for r in rows
         ]
         if not events:
-            raise RuntimeError("session has no events to evaluate")
+            # aborted-before-anything sessions still deserve a terminal record:
+            # a degraded evaluation routes to the review queue instead of the
+            # session sitting in "Processing" forever
+            return _store_degraded(
+                db, sid, session.org_id, competency_ids,
+                reason="session has no events to evaluate (partial/aborted)",
+            )
         valid_ids: set[int] = {r.id for r in rows}
 
         signals = compute_signals(events)
@@ -228,12 +297,19 @@ async def evaluate_session(session_id: str) -> uuid.UUID:
             "Competencies: " + json.dumps(competencies)
             + "\n\nTranscript and events:\n" + transcript
         )
-        evidence_text = await _call_model(
-            db, sid, session.org_id, "evaluate/evidence_v1", evidence_input
-        )
-        evidence = _validate_evidence(
-            _parse_json_object(evidence_text), valid_ids, competency_ids
-        )
+        try:
+            evidence_text = await _call_model(
+                db, sid, session.org_id, "evaluate/evidence_v1", evidence_input
+            )
+            evidence = _validate_evidence(
+                _parse_json_object(evidence_text), valid_ids, competency_ids
+            )
+        except Exception as exc:  # noqa: BLE001 - degraded beats dropped
+            log.error("evidence pass failed for %s: %s", sid, exc)
+            return _store_degraded(
+                db, sid, session.org_id, competency_ids,
+                reason=f"evidence pass failed: {exc}"[:300], signals=signals,
+            )
 
         # Pass 2 — scoring from evidence only (retry once on validation failure)
         jd_context = (
@@ -267,9 +343,9 @@ async def evaluate_session(session_id: str) -> uuid.UUID:
                     _parse_json_object(scoring_text), evidence, competency_ids
                 )
                 break
-            except (ValidationError, ValueError, json.JSONDecodeError) as exc:
+            except Exception as exc:  # noqa: BLE001 - validation OR provider
                 last_error = str(exc)[:300]
-                log.warning("scoring pass attempt %d invalid: %s", attempt + 1, last_error)
+                log.warning("scoring pass attempt %d failed: %s", attempt + 1, last_error)
         else:
             degraded = True
 

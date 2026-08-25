@@ -459,13 +459,30 @@ async def interview_session(ctx: agents.JobContext) -> None:
 
     if session_id:
         sink = EventSink(session_id)
-        # One parallel burst instead of four sequential round-trips
-        session_row, bundle, questions, history = await asyncio.gather(
-            backend.get_json(f"/sessions/{session_id}"),
-            backend.get_json(f"/sessions/{session_id}/plan"),
-            backend.get_json(f"/sessions/{session_id}/round-content"),
-            backend.replay(session_id),
-        )
+        # One parallel burst instead of four sequential round-trips. A None
+        # session_row means the FETCH failed (the room only exists for a real
+        # session) — retry, then refuse the job rather than conducting the
+        # DEFAULT_PLAN against a real session and polluting its event log
+        # with a spurious fresh-start transition.
+        session_row = bundle = questions = None
+        history: list[dict] = []
+        for attempt in range(3):
+            session_row, bundle, questions, history = await asyncio.gather(
+                backend.get_json(f"/sessions/{session_id}"),
+                backend.get_json(f"/sessions/{session_id}/plan"),
+                backend.get_json(f"/sessions/{session_id}/round-content"),
+                backend.replay(session_id),
+            )
+            if session_row is not None:
+                break
+            log.warning("bootstrap fetch failed (attempt %d/3); backing off", attempt + 1)
+            await asyncio.sleep(2 * (attempt + 1))
+        if session_row is None:
+            await backend.close()
+            raise RuntimeError(
+                f"backend unreachable during bootstrap for session {session_id} — "
+                "refusing to conduct a default-plan interview against a real session"
+            )
         if session_row:
             jd_text = session_row.get("jd_text")
             resume_text = session_row.get("resume_text")
@@ -524,18 +541,34 @@ async def interview_session(ctx: agents.JobContext) -> None:
         ),
     )
 
+    # strong refs: the event loop keeps only weak references to tasks, so an
+    # untracked fire-and-forget log task can be GC'd before it ever runs
+    bg_tasks: set[asyncio.Task] = set()
+
+    def _track(task: asyncio.Task) -> None:
+        bg_tasks.add(task)
+
+        def _done(t: asyncio.Task) -> None:
+            bg_tasks.discard(t)
+            if not t.cancelled() and t.exception() is not None:
+                log.warning("background task failed: %r", t.exception())
+
+        task.add_done_callback(_done)
+
     @session.on("metrics_collected")
     def on_metrics(ev) -> None:  # noqa: ANN001
         m = getattr(ev, "metrics", ev)
         fields = tracker.record(m)
         if isinstance(m, metrics.LLMMetrics):
-            asyncio.create_task(
+            _track(asyncio.create_task(
                 backend.log_llm_call(
                     {
                         "session_id": session_id,
                         "prompt_version_name": conductor.current_prompt_version(),
                         "role": "conduct",
-                        "model": CONDUCT_MODEL,
+                        # FallbackAdapter turns may be served by a non-primary
+                        # model; prefer the metric's own attribution
+                        "model": getattr(m, "model", None) or CONDUCT_MODEL,
                         "input_tokens": getattr(m, "prompt_tokens", 0) or 0,
                         "cached_tokens": getattr(m, "prompt_cached_tokens", 0) or 0,
                         "output_tokens": getattr(m, "completion_tokens", 0) or 0,
@@ -543,7 +576,7 @@ async def interview_session(ctx: agents.JobContext) -> None:
                         "total_ms": int((getattr(m, "duration", 0) or 0) * 1000),
                     }
                 )
-            )
+            ))
         if isinstance(m, metrics.TTSMetrics) and fields:
             turn = tracker.complete_turn()
             if turn and sink:
@@ -760,10 +793,17 @@ async def interview_session(ctx: agents.JobContext) -> None:
                 continue
             code = snap.get("code", "")
             conductor.recent_editing = code != last_code
-            diff_lines = list(
-                difflib.unified_diff(last_code.splitlines(), code.splitlines(), lineterm="", n=1)
-            )
-            diff = "\n".join(diff_lines[2:])[:1200]
+            if len(code) < 20_000 and len(last_code) < 20_000:
+                diff_lines = list(
+                    difflib.unified_diff(
+                        last_code.splitlines(), code.splitlines(), lineterm="", n=1
+                    )
+                )
+                diff = "\n".join(diff_lines[2:])[:1200]
+            else:
+                # difflib is quadratic — a huge paste must not stall the event
+                # loop the live audio pipeline runs on
+                diff = "(large edit — diff skipped)" if code != last_code else ""
             last_code = code
             # The observation always carries the FULL current code so the model
             # can genuinely read it — not just recent diffs (§7.2, revised).
@@ -804,8 +844,24 @@ async def interview_session(ctx: agents.JobContext) -> None:
         await backend.set_status(session_id, "in_progress")
 
     await session.start(room=ctx.room, agent=conductor)
-    t1 = asyncio.create_task(transition_loop())
-    t2 = asyncio.create_task(observation_loop())
+
+    async def _supervise(name: str, loop_fn) -> None:  # noqa: ANN001
+        """An iteration crash must log and restart the loop — never silently
+        kill the interview state machine (the old failure mode: a single
+        provider exception froze the interview with no transition ever
+        firing again)."""
+        while True:
+            try:
+                await loop_fn()
+                return  # clean return: interview ended
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("%s crashed; restarting in 5s", name)
+                await asyncio.sleep(5)
+
+    t1 = asyncio.create_task(_supervise("transition_loop", transition_loop))
+    t2 = asyncio.create_task(_supervise("observation_loop", observation_loop))
 
     await session.generate_reply(
         instructions="Greet the candidate warmly, confirm they can hear you, and set expectations "

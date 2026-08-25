@@ -511,6 +511,14 @@ def start_demo(claims: dict[str, Any] = Depends(_bearer)) -> dict[str, Any]:
     db = _identity_db()
     try:
         email = str(claims["email"])
+        # serialize per account: the 3-cap is count-then-insert, so two
+        # concurrent calls at 2/3 would otherwise both pass
+        from sqlalchemy import text as _text
+
+        db.execute(
+            _text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+            {"k": f"demo:{email}"},
+        )
         demos = db.scalars(
             select(Candidacy)
             .where(Candidacy.candidate_email == email, Candidacy.source == "demo")

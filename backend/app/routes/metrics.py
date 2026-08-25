@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy import text as _text
 from sqlalchemy.orm import Session as DbSession
 
 from app.eval.calibration import calibration_report
@@ -23,6 +24,15 @@ from app.models import (
 )
 from app.tenancy import OrgContext, get_db, require_role
 
+
+def SessionLocal_health():  # noqa: N802 - tiny local alias
+    from app.db import SessionLocal, set_rls_context
+
+    db = SessionLocal()
+    # cross-org operator counter (counts only, no tenant data leaves)
+    set_rls_context(db, bypass=True)
+    return db
+
 router = APIRouter()
 
 
@@ -30,6 +40,49 @@ def _pct(values: list[float], p: float) -> float:
     ordered = sorted(values)
     idx = min(len(ordered) - 1, round(p * (len(ordered) - 1)))
     return ordered[int(idx)]
+
+
+@router.get("/metrics/eval-health")
+def eval_health(
+    ctx: OrgContext = Depends(require_role("reviewer")),
+) -> dict[str, Any]:
+    """Operator visibility for the eval pipeline (audit finding: a wedged
+    worker was invisible). Queue depth, dead-letter count, and sessions
+    completed >10min ago with no evaluation ("stuck")."""
+    import redis as _redis
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    depth = dead = -1
+    try:
+        r = _redis.Redis.from_url(settings.redis_url, socket_timeout=3)
+        depth = int(r.llen(settings.eval_queue))
+        dead = int(r.llen(f"{settings.eval_queue}:dead"))
+    except _redis.RedisError:
+        pass  # -1 signals "redis unreachable" to the dashboard
+    db = SessionLocal_health()
+    try:
+        stuck = db.execute(
+            _text(
+                """
+                SELECT count(*) FROM sessions s
+                WHERE s.status = 'completed'
+                  AND s.ended_at < now() - interval '10 minutes'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM evaluations e WHERE e.session_id = s.id
+                  )
+                """
+            )
+        ).scalar()
+    finally:
+        db.close()
+    return {
+        "queue_depth": depth,
+        "dead_letter": dead,
+        "stuck_sessions": int(stuck or 0),
+        "healthy": depth == 0 and dead == 0 and int(stuck or 0) == 0,
+    }
 
 
 @router.get("/metrics/latency")

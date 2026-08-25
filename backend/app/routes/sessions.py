@@ -263,7 +263,15 @@ def set_session_status(
             r = _redis.Redis.from_url(get_settings().redis_url, socket_timeout=3)
             r.lpush(get_settings().eval_queue, _json.dumps({"session_id": str(session_id)}))
         except _redis.RedisError:
-            pass
+            # LOUD failure: this session will sit unevaluated until someone
+            # re-enqueues it — a silent pass here is how sessions get stuck
+            # in "Processing" forever
+            import logging
+
+            logging.getLogger("sessions").error(
+                "EVAL ENQUEUE FAILED for session %s — redis unavailable; "
+                "re-enqueue manually or restart the worker", session_id
+            )
     return session
 
 
