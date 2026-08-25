@@ -483,6 +483,14 @@ async def interview_session(ctx: agents.JobContext) -> None:
                 f"backend unreachable during bootstrap for session {session_id} — "
                 "refusing to conduct a default-plan interview against a real session"
             )
+        if session_row.get("status") in ("completed", "aborted"):
+            # a finished interview never resurrects: without this, re-entering
+            # the room re-dispatched the agent, which rebuilt the old
+            # transcript and "resumed" the ended conversation
+            log.info("session %s already %s - refusing dispatch", session_id, session_row["status"])
+            await backend.close()
+            ctx.shutdown(reason="session already ended")
+            return
         if session_row:
             jd_text = session_row.get("jd_text")
             resume_text = session_row.get("resume_text")
@@ -492,6 +500,11 @@ async def interview_session(ctx: agents.JobContext) -> None:
         if questions:
             round_meta = questions  # /round-content: per-round statement/hints/pack/etc.
         initial = rebuild(history, InterviewPlan.from_json(plan_data))
+        if initial.round_id == ENDED:
+            log.info("session %s event log is at ENDED - refusing dispatch", session_id)
+            await backend.close()
+            ctx.shutdown(reason="interview already ended per event log")
+            return
         log.info(
             "session %s bootstrap: %d prior events, resuming in %s",
             session_id, len(history), initial.round_id,

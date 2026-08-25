@@ -66,6 +66,8 @@ async def execute(
     exec_session = db.get(Session, body.session_id)
     if exec_session is None:
         raise HTTPException(404, "session not found")
+    if exec_session.status in ("completed", "aborted"):
+        raise HTTPException(409, "this interview has ended - code can no longer be run")
 
     # Per-session concurrency = 1 (Redis lock; TTL guards against crashed holders)
     r = _redis()
