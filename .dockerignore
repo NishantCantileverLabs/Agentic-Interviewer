@@ -1,0 +1,16 @@
+.git
+.vscode
+.venv
+venv
+node_modules
+.next
+__pycache__
+*.egg-info
+.env
+.env.local
+.env.*.local
+pgdata
+minio-data
+tests
+*.md
+!backend/prompts/README.md

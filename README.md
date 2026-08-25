@@ -27,7 +27,28 @@ stub used by scripts, and on-screen signup OTPs — work only while
 `ENVIRONMENT` is not `production`. Setting `ENVIRONMENT=production` makes the
 API **refuse to boot** with any dev-default secret still in place.
 
-## Dev quickstart (three terminals)
+## Quick start (Docker)
+
+```bash
+# Start core services — API, Postgres, Redis, MinIO, LiveKit, eval worker, y-websocket
+docker compose up -d --build
+
+# Full stack — add Judge0 sandbox, containerized voice agent, production frontend
+docker compose --profile sandbox --profile agent --profile frontend up -d --build
+```
+
+Then open http://localhost:3000 — candidate side and admin console both hang off it.
+
+First-time setup: `cp .env.example .env` and fill keys (ANTHROPIC_API_KEY or
+OPENROUTER_API_KEY, and DEEPGRAM_API_KEY — one key covers STT and the default
+Aura TTS; ELEVENLABS_API_KEY / CARTESIA_API_KEY are optional fallback voices).
+The provided `.env` has working dev defaults for everything else.
+
+Stop everything: `docker compose down`.
+
+API at http://localhost:8000 (docs at /docs), MinIO console at http://localhost:9001.
+
+### Dev quickstart (host + containers)
 
 ```bash
 # Terminal 1 — infra + api + eval worker (+ Judge0 sandbox + LiveKit + y-websocket)
@@ -40,11 +61,7 @@ cd agent && .venv/Scripts/python interview_agent.py dev
 cd frontend && npm run dev
 ```
 
-Then open http://localhost:3000 — candidate side and admin console both hang off it.
-First-time setup: `cp .env.example .env` and fill keys (ANTHROPIC_API_KEY or
-OPENROUTER_API_KEY, and DEEPGRAM_API_KEY — one key covers STT and the default
-Aura TTS; ELEVENLABS_API_KEY / CARTESIA_API_KEY are optional fallback voices);
-create venvs with `python -m venv .venv && .venv/Scripts/pip install -e .` in
+Create venvs with `python -m venv .venv && .venv/Scripts/pip install -e .` in
 `backend/` (add `[dev]` for tests) and `agent/`, and `npm install` in `frontend/`.
 Seed dev content: `backend/.venv/Scripts/python backend/scripts/seed.py`,
 `seed_rounds.py`, `seed_phase3.py`, and `sync_prompts.py`.
@@ -55,13 +72,6 @@ Verification suites (run from `backend/`):
 (if the host Python env fights the app's pins, run the pytest suite inside the
 api container: `docker cp backend/tests <api>:/srv/tests`, `pip install pytest`,
 `python -m pytest tests` — same DB, real RLS).
-
-Stop everything: Ctrl+C in terminals 2/3, then `docker compose --profile sandbox down`.
-
-API at http://localhost:8000 (docs at /docs), MinIO console at http://localhost:9001.
-
-Deferred services: `--profile editor` (y-websocket, T3), `--profile sandbox` (Judge0, T4),
-`--profile frontend` (Next dev server).
 
 ## Layout
 
@@ -74,3 +84,30 @@ Deferred services: `--profile editor` (y-websocket, T3), `--profile sandbox` (Ju
 /prompts    versioned prompt files (file = source, DB = runtime record)
 /tests/e2e  scripted mock-candidate harness
 ```
+
+## Docker
+
+All services are containerized with `docker-compose.yml` at the repo root.
+
+| File | Purpose |
+|------|---------|
+| `backend/Dockerfile` | Python 3.12 API + eval worker |
+| `frontend/Dockerfile` | Next.js multi-stage build (build → production) |
+| `agent/Dockerfile` | LiveKit Agents voice worker |
+| `backend/.dockerignore` | Excludes tests/venv from backend build context |
+| `frontend/.dockerignore` | Excludes node_modules/.next from frontend build context |
+| `.env` | Environment variables (dev defaults, works out of the box) |
+| `.env.example` | Full reference of all available variables |
+
+The API container runs Alembic migrations + prompt sync on startup. Migrations
+apply automatically; prompts from `/prompts` are mounted read-only and synced
+into the database at boot.
+
+Profiles:
+- (none) — core stack: API, Postgres, Redis, MinIO, LiveKit, eval worker, y-websocket
+- `sandbox` — Judge0 code execution (requires `privileged: true`)
+- `agent` — containerized voice worker (needs DEEPGRAM_API_KEY)
+- `frontend` — production Next.js build (NEXT_PUBLIC_* args baked at build time)
+
+Run `docker compose --profile sandbox --profile agent --profile frontend up -d --build`
+for the full stack. See [DEPLOY.md](DEPLOY.md) for production posture and TLS setup.
