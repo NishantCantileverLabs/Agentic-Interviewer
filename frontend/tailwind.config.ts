@@ -45,12 +45,22 @@ const config: Config = {
       xl: "14px",
       full: "9999px",
     },
+    // NOTE: this REPLACES Tailwind's spacing scale — any step missing here
+    // emits no CSS at all and the utility silently does nothing. Half-steps
+    // and the fixed element sizes below were absent, so ~33 utilities used
+    // across the app (py-0.5, px-2.5, gap-1.5, h-14 nav bars, w-40 columns…)
+    // were dead: chips had no padding and the sticky nav collapsed onto its
+    // own border. Add a step here before using it.
     spacing: {
       0: "0",
       px: "1px",
+      0.5: "2px",
       1: "4px",
+      1.5: "6px",
       2: "8px",
+      2.5: "10px",
       3: "12px",
+      3.5: "14px",
       4: "16px",
       5: "24px",
       6: "32px",
@@ -60,6 +70,18 @@ const config: Config = {
       10: "64px",
       11: "44px", // minimum touch target (Button/ButtonLink md)
       12: "96px",
+      // fixed element sizes (nav heights, column widths, scroll offsets) —
+      // these follow Tailwind's default px values, not the rhythm above
+      14: "56px",
+      20: "80px",
+      24: "96px",
+      36: "144px",
+      40: "160px",
+      44: "176px",
+      48: "192px",
+      56: "224px",
+      64: "256px",
+      72: "288px",
     },
     fontFamily: {
       display: ['"Space Grotesk"', "system-ui", "sans-serif"],

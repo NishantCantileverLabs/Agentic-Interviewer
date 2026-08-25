@@ -263,15 +263,15 @@ export function CodeTool({
                       {spec && (
                         <div className="mt-1.5 grid gap-1.5 sm:grid-cols-3">
                           <div>
-                            <div className="font-mono text-[10px] uppercase tracking-wide text-muted">Input</div>
+                            <div className="font-mono text-xs uppercase tracking-wide text-muted">Input</div>
                             <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-ink-soft">{spec.stdin || "(none)"}</pre>
                           </div>
                           <div>
-                            <div className="font-mono text-[10px] uppercase tracking-wide text-muted">Expected output</div>
+                            <div className="font-mono text-xs uppercase tracking-wide text-muted">Expected output</div>
                             <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-green">{spec.expected_output}</pre>
                           </div>
                           <div>
-                            <div className="font-mono text-[10px] uppercase tracking-wide text-muted">Your output</div>
+                            <div className="font-mono text-xs uppercase tracking-wide text-muted">Your output</div>
                             <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-rust">{t.stdout || "(no output)"}</pre>
                           </div>
                         </div>
