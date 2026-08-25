@@ -292,4 +292,5 @@ volumes:
 
 networks:
   default:
-    name: interview-platform
+    name: process
+    external: true
