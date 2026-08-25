@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1 · infra (docker)",
+      "type": "shell",
+      "command": "docker compose --profile sandbox up -d",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "2 · voice agent",
+      "type": "shell",
+      "command": "& .\\.venv\\Scripts\\python.exe interview_agent.py dev",
+      "options": { "cwd": "${workspaceFolder}\\agent" },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "3 · frontend",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}\\frontend" },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "▶ run everything",
+      "dependsOn": ["1 · infra (docker)", "2 · voice agent", "3 · frontend"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}
