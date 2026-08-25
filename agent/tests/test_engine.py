@@ -25,7 +25,8 @@ PLAN = InterviewPlan.from_json(
 LEGACY_PLAN = InterviewPlan.from_json(
     {
         "role_config_id": "sde_backend_v1",
-        "time_budget_min": {"INTRO": 2, "WARMUP": 5, "TECHNICAL_DEEPDIVE": 12, "CODING": 22, "WRAPUP": 4},
+        "time_budget_min": {"INTRO": 2, "WARMUP": 5, "TECHNICAL_DEEPDIVE": 12, "CODING": 22,
+            "WRAPUP": 4},
         "competencies": [{"id": "problem_solving", "weight": 1.0, "probe_budget": 3}],
         "question_refs": {"coding": "q-legacy"},
     }
@@ -35,11 +36,13 @@ T0 = datetime(2026, 8, 23, 10, 0, 0, tzinfo=UTC)
 
 
 def ev(seq: int, type_: str, payload: dict | None = None, minutes: float = 0) -> dict:
-    return {"seq": seq, "type": type_, "payload": payload or {}, "ts": T0 + timedelta(minutes=minutes)}
+    return {"seq": seq, "type": type_, "payload": payload or {},
+        "ts": T0 + timedelta(minutes=minutes)}
 
 
 def agent_turn(seq: int, intent: str, competency: str | None = None, minutes: float = 0) -> dict:
-    return ev(seq, "agent_turn", {"text": "...", "meta": {"intent": intent, "competency": competency}}, minutes)
+    return ev(seq, "agent_turn", {"text": "...", "meta": {"intent": intent,
+        "competency": competency}}, minutes)
 
 
 def test_legacy_plan_synthesizes_classic_rounds() -> None:
@@ -109,7 +112,7 @@ def test_probe_budget_exhaustion_directive() -> None:
 
 def test_parse_meta_happy_and_malformed() -> None:
     meta, text = parse_meta(
-        '@meta{"intent":"probe","competency":"problem_solving","hint_level":null}\nWhat breaks at scale?'
+        '@meta{"intent":"probe","competency":"problem_solving","hint_level":null}\nWhat breaks at scale?'  # noqa: E501
     )
     assert meta.intent == "probe" and text == "What breaks at scale?"
     meta2, text2 = parse_meta("@meta{not json}\nStill spoken.")
@@ -190,8 +193,10 @@ def test_nudge_max_twice_and_requires_silence() -> None:
     assert not sm.should_nudge(es, T0 + timedelta(minutes=3), editing=False)
     # two nudges already used in this round -> capped
     nudged = base + [
-        ev(2, "agent_turn", {"text": "walk me through?", "meta": {"intent": "chat"}, "nudge": True}, 4),
-        ev(3, "agent_turn", {"text": "thinking out loud helps", "meta": {"intent": "chat"}, "nudge": True}, 7),
+        ev(2, "agent_turn", {"text": "walk me through?", "meta": {"intent": "chat"},
+            "nudge": True}, 4),
+        ev(3, "agent_turn", {"text": "thinking out loud helps", "meta": {"intent": "chat"},
+            "nudge": True}, 7),
     ]
     es2 = rebuild(nudged, PLAN)
     assert not sm.should_nudge(es2, T0 + timedelta(minutes=10), editing=True)

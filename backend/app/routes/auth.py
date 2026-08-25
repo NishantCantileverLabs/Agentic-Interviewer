@@ -558,22 +558,40 @@ def my_interviews(claims: dict[str, Any] = Depends(_bearer)) -> list[dict[str, A
             .order_by(Candidacy.created_at.desc())
             .limit(50)
         ).all()
+        # batched lookups (was ~3 queries per candidacy): one query per table
+        cids = [c.id for c in rows]
+        latest_schedule: dict[uuid.UUID, Schedule] = {}
+        for sch in db.scalars(
+            select(Schedule)
+            .where(Schedule.candidacy_id.in_(cids))
+            .order_by(Schedule.slot_start)
+        ):
+            latest_schedule[sch.candidacy_id] = sch  # ascending: last write wins
+        roles = {
+            r.id: r
+            for r in db.scalars(
+                select(JobRole).where(
+                    JobRole.id.in_([c.job_role_id for c in rows if c.job_role_id])
+                )
+            )
+        }
+        orgs = {
+            o.id: o
+            for o in db.scalars(select(Org).where(Org.id.in_({c.org_id for c in rows})))
+        }
+        latest_by_cand: dict[uuid.UUID, Session] = {}
+        for sess in db.scalars(
+            select(Session)
+            .where(Session.candidacy_id.in_(cids))
+            .order_by(Session.created_at)
+        ):
+            latest_by_cand[sess.candidacy_id] = sess
         out: list[dict[str, Any]] = []
         for c in rows:
-            schedule = db.scalar(
-                select(Schedule)
-                .where(Schedule.candidacy_id == c.id)
-                .order_by(Schedule.slot_start.desc())
-                .limit(1)
-            )
-            role = db.get(JobRole, c.job_role_id) if c.job_role_id else None
-            org = db.get(Org, c.org_id)
-            latest_session = db.scalar(
-                select(Session)
-                .where(Session.candidacy_id == c.id)
-                .order_by(Session.created_at.desc())
-                .limit(1)
-            )
+            schedule = latest_schedule.get(c.id)
+            role = roles.get(c.job_role_id) if c.job_role_id else None
+            org = orgs.get(c.org_id)
+            latest_session = latest_by_cand.get(c.id)
             out.append(
                 {
                     "candidacy_id": str(c.id),

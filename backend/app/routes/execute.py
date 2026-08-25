@@ -1,9 +1,10 @@
 import uuid
+from functools import lru_cache
 from typing import Any, Literal
 
 import redis
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
@@ -25,16 +26,32 @@ router = APIRouter()
 _EXEC_LOCK_TTL_S = 60
 
 
+MAX_SOURCE_CHARS = 200_000  # ~200KB: far above any interview answer
+MAX_STDIN_CHARS = 100_000
+
+
 class ExecuteRequest(BaseModel):
     session_id: uuid.UUID
     language: Literal["python", "javascript", "java", "cpp", "sql"]
-    source: str
-    stdin: str | None = None
+    # bounded: unbounded bodies were forwarded straight to Judge0
+    source: str = Field(max_length=MAX_SOURCE_CHARS)
+    stdin: str | None = Field(default=None, max_length=MAX_STDIN_CHARS)
     test_suite_id: uuid.UUID | None = None  # question id
 
 
+@lru_cache(maxsize=1)
 def _redis() -> redis.Redis:
+    # one pooled client per process (was a fresh client per request on the
+    # live-interview code-run path)
     return redis.Redis.from_url(get_settings().redis_url, socket_timeout=5)
+
+
+@lru_cache(maxsize=1)
+def _judge0() -> Judge0Client:
+    """One client (and one connection pool) for the process: a fresh
+    AsyncClient per /execute meant a new TLS/TCP handshake on the code-run
+    hot path during live interviews."""
+    return Judge0Client()
 
 
 @router.post("/execute")
@@ -56,7 +73,7 @@ async def execute(
     if not r.set(lock_key, "1", nx=True, ex=_EXEC_LOCK_TTL_S):
         raise HTTPException(429, "an execution is already running for this session")
 
-    client = Judge0Client()
+    client = _judge0()
     try:
         if body.test_suite_id is None:
             raw = await client.run(body.language, body.source, body.stdin or "")
@@ -96,5 +113,6 @@ async def execute(
         )
         return response
     finally:
-        await client.close()
+        # the Judge0 client is process-cached (connection reuse) — closing it
+        # here would break every subsequent request
         r.delete(lock_key)

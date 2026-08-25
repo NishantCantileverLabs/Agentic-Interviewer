@@ -3,8 +3,15 @@
     python scripts/sync_prompts.py [prompts_dir]
 
 File naming: prompts/<role>/<name>_v<N>.txt -> prompt_versions.name = "<role>/<name>_v<N>".
-Idempotent: a row is inserted only when (name, content) isn't already recorded;
-edited content under the same filename gets a fresh row (audit trail preserved).
+Idempotent against the LATEST row per name: any change — including a revert
+to earlier content — inserts a fresh row, because runtime resolution picks the
+newest row by created_at (a revert matched against ANY historical row was a
+silent no-op: the rollback never took effect).
+
+    python scripts/sync_prompts.py --check   # exit 1 on drift, change nothing
+                                             # (CI/deploy gate: images do not
+                                             # ship prompt files, so drift is
+                                             # caught here, not at runtime)
 """
 
 import pathlib
@@ -20,9 +27,10 @@ ROLES = {"conduct", "evaluate", "brief"}
 
 
 def main() -> None:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     root = (
-        pathlib.Path(sys.argv[1])
-        if len(sys.argv) > 1
+        pathlib.Path(args[0])
+        if args
         else pathlib.Path(__file__).parent.parent.parent / "prompts"
     )
     settings = get_settings()
@@ -31,8 +39,19 @@ def main() -> None:
         "evaluate": settings.eval_model,
         "brief": settings.eval_model,
     }
-    engine = sa.create_engine(settings.database_url.replace("@postgres:", "@localhost:"))
+    # try the configured URL first (works in-container); fall back to the
+    # localhost rewrite for host-side dev runs against compose Postgres
+    engine = sa.create_engine(settings.database_url)
+    try:
+        with engine.connect():
+            pass
+    except sa.exc.OperationalError:
+        engine = sa.create_engine(
+            settings.database_url.replace("@postgres:", "@localhost:")
+        )
 
+    check_only = "--check" in sys.argv
+    drifted: list[str] = []
     synced = skipped = 0
     with engine.begin() as conn:
         for role_dir in sorted(root.iterdir()):
@@ -41,14 +60,18 @@ def main() -> None:
             for f in sorted(role_dir.glob("*.txt")):
                 name = f"{role_dir.name}/{f.stem}"
                 content = f.read_text(encoding="utf-8")
-                exists = conn.execute(
+                latest = conn.execute(
                     sa.text(
-                        "SELECT 1 FROM prompt_versions WHERE name = :n AND content = :c"
+                        "SELECT content FROM prompt_versions WHERE name = :n "
+                        "ORDER BY created_at DESC LIMIT 1"
                     ),
-                    {"n": name, "c": content},
+                    {"n": name},
                 ).first()
-                if exists:
+                if latest is not None and latest[0] == content:
                     skipped += 1
+                    continue
+                if check_only:
+                    drifted.append(name)
                     continue
                 conn.execute(
                     sa.text(
@@ -65,6 +88,14 @@ def main() -> None:
                 )
                 synced += 1
                 print(f"synced {name}")
+    if check_only:
+        if drifted:
+            print(f"DRIFT: {len(drifted)} prompt file(s) differ from the DB latest:")
+            for name in drifted:
+                print(f"  - {name}")
+            sys.exit(1)
+        print(f"no drift ({skipped} prompts match)")
+        return
     print(f"\n{synced} inserted, {skipped} unchanged")
 
 

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
-from engine.plan import CODE_ROUND_TYPES, ENDED, InterviewPlan, Round
+from engine.plan import ENDED, InterviewPlan, Round
 
 
 @dataclass(frozen=True)
