@@ -186,7 +186,7 @@ services:
   judge0:
     restart: unless-stopped
     profiles: ["sandbox"]
-    image: judge0/judge0:1.13.1
+    image: judge0/judge0:latest
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
     tmpfs:
@@ -214,7 +214,7 @@ services:
   judge0-workers:
     restart: unless-stopped
     profiles: ["sandbox"]
-    image: judge0/judge0:1.13.1
+    image: judge0/judge0:latest
     command: ["./scripts/workers"]
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
