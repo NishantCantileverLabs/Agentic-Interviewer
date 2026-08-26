@@ -193,6 +193,9 @@ services:
       - /box:size=100M
       - /tmp:size=100M
       - /sys/fs/cgroup/memory:size=100M
+      - /sys/fs/cgroup/cpuacct:size=100M
+      - /sys/fs/cgroup/blkio:size=100M
+      - /sys/fs/cgroup/pids:size=100M
     environment:
       # empty disables AUTHN (dev); production posture requires it set
       AUTHN_HEADER: X-Auth-Token
@@ -224,6 +227,9 @@ services:
       - /box:size=100M
       - /tmp:size=100M
       - /sys/fs/cgroup/memory:size=100M
+      - /sys/fs/cgroup/cpuacct:size=100M
+      - /sys/fs/cgroup/blkio:size=100M
+      - /sys/fs/cgroup/pids:size=100M
     environment:
       ENABLE_CGROUPS: "false"
     privileged: true
