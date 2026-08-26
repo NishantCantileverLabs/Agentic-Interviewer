@@ -174,9 +174,7 @@ services:
   # T3: Yjs CRDT sync server for the collaborative editor
   y-websocket:
     restart: unless-stopped
-    image: node:20-alpine
-    # v2+ dropped the bundled server binary; v1's server speaks the same sync protocol
-    command: sh -c "npx -y y-websocket"
+    build: ./y-websocket-server
     environment:
       HOST: 0.0.0.0
       PORT: 1234
