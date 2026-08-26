@@ -80,7 +80,7 @@ def create_session(
     return session
 
 
-@router.get("/sessions/{session_id}", response_model=SessionOut, head=True)
+@router.get("/sessions/{session_id}", response_model=SessionOut)
 def get_session(
     session_id: uuid.UUID,
     db: DbSession = Depends(get_db),
@@ -91,6 +91,14 @@ def get_session(
     if session is None:
         raise HTTPException(404, "session not found")
     return session
+
+
+@router.head("/sessions/{session_id}")
+def head_session(
+    session_id: uuid.UUID,
+    ctx: OrgContext = Depends(get_org_context),
+) -> None:
+    ensure_session_access(ctx, session_id)
 
 
 @router.post("/sessions/{session_id}/candidate-link")
