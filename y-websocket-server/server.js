@@ -1,7 +1,5 @@
-import http from "http";
-import { WebSocketServer } from "ws";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
+const http = require("http");
+const { WebSocketServer } = require("ws");
 const { setupWSConnection } = require("y-websocket/bin/utils.cjs");
 
 const host = process.env.HOST || "0.0.0.0";
