@@ -189,6 +189,9 @@ services:
     image: judge0/judge0:1.13.1
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
+    tmpfs:
+      - /box:size=100M
+      - /tmp:size=100M
     environment:
       # empty disables AUTHN (dev); production posture requires it set
       AUTHN_HEADER: X-Auth-Token
@@ -215,6 +218,9 @@ services:
     command: ["./scripts/workers"]
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
+    tmpfs:
+      - /box:size=100M
+      - /tmp:size=100M
     privileged: true
     depends_on:
       - judge0-db
