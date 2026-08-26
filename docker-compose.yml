@@ -264,6 +264,8 @@ services:
       TURN_DETECTOR: ${TURN_DETECTOR:-stt}
       DEEPGRAM_ENDPOINTING_MS: ${DEEPGRAM_ENDPOINTING_MS:-500}
       ENVIRONMENT: ${ENVIRONMENT:-dev}
+    volumes:
+      - ./prompts:/prompts:ro
     depends_on:
       livekit:
         condition: service_started
