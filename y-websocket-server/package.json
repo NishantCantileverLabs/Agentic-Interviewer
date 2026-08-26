@@ -2,7 +2,7 @@
   "name": "y-websocket-server",
   "private": true,
   "dependencies": {
-    "y-websocket": "^2.1.0",
+    "@y/websocket-server": "latest",
     "ws": "^8"
   }
 }

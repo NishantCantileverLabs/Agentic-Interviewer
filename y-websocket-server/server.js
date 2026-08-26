@@ -1,6 +1,6 @@
-const http = require("http");
-const { WebSocketServer } = require("ws");
-const { setupWSConnection } = require("./node_modules/y-websocket/bin/utils.cjs");
+import http from "http";
+import { WebSocketServer } from "ws";
+import { setupWSConnection } from "@y/websocket-server/utils.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = parseInt(process.env.PORT || "1234", 10);
