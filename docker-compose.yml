@@ -192,6 +192,7 @@ services:
     tmpfs:
       - /box:size=100M
       - /tmp:size=100M
+      - /sys/fs/cgroup/memory:rw,size=50M
     environment:
       # empty disables AUTHN (dev); production posture requires it set
       AUTHN_HEADER: X-Auth-Token
@@ -221,6 +222,7 @@ services:
     tmpfs:
       - /box:size=100M
       - /tmp:size=100M
+      - /sys/fs/cgroup/memory:rw,size=50M
     privileged: true
     depends_on:
       - judge0-db
