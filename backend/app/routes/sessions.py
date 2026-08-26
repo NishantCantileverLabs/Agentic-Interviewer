@@ -80,7 +80,7 @@ def create_session(
     return session
 
 
-@router.get("/sessions/{session_id}", response_model=SessionOut)
+@router.get("/sessions/{session_id}", response_model=SessionOut, head=True)
 def get_session(
     session_id: uuid.UUID,
     db: DbSession = Depends(get_db),
