@@ -201,6 +201,8 @@ services:
       AUTHN_HEADER: X-Auth-Token
       AUTHN_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
       ENABLE_CGROUPS: "false"
+      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: "true"
+      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: "true"
     ports:
       # loopback only — the API container reaches it on the compose network;
       # a privileged code-execution service must never face the LAN
@@ -232,6 +234,8 @@ services:
       - /sys/fs/cgroup/pids:size=100M
     environment:
       ENABLE_CGROUPS: "false"
+      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: "true"
+      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: "true"
     privileged: true
     depends_on:
       - judge0-db
