@@ -176,7 +176,7 @@ services:
     restart: unless-stopped
     image: node:20-alpine
     # v2+ dropped the bundled server binary; v1's server speaks the same sync protocol
-    command: sh -c "npx -y y-websocket@1"
+    command: sh -c "npx -y y-websocket"
     environment:
       HOST: 0.0.0.0
       PORT: 1234
