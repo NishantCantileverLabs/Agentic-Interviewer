@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     prompt_cache_enabled: bool = True
 
     livekit_url: str = "ws://localhost:7880"
+    # Public-facing URL the browser uses to reach LiveKit (must be wss:// in
+    # production).  Falls back to livekit_url for local dev where Caddy isn't
+    # in front.
+    livekit_public_url: str = ""
     livekit_api_key: str = "devkey"
     livekit_api_secret: str = "secret"
 

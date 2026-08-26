@@ -357,7 +357,7 @@ def issue_room_token(
         )
         .to_jwt()
     )
-    return {"token": token, "url": settings.livekit_url, "room": room}
+    return {"token": token, "url": settings.livekit_public_url or settings.livekit_url, "room": room}
 
 
 @router.get("/sessions/{session_id}/replay", response_model=list[EventOut])
