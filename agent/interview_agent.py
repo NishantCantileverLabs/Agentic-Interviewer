@@ -277,6 +277,10 @@ class InterviewConductor(Agent):
         self.transcript_text = ""  # rolling candidate transcript (coverage checks)
         self.canvas_labels: list[str] = []
         self.scratchpad_text = ""
+        # Serialize generate_reply callers (transition_loop twist/nudge vs.
+        # LLM turn vs. initial greeting) — concurrent calls produce two TTS
+        # streams the candidate hears as two voices.
+        self._reply_lock = asyncio.Lock()
         # v2 adds the guardrails: no invented documents, structure stays
         # confidential, strict interview-only scope, no solution walkthroughs
         self.base_prompt = (PROMPTS_DIR / "base_v2.txt").read_text(encoding="utf-8")
@@ -388,10 +392,11 @@ class InterviewConductor(Agent):
         self.latest_observation = None  # fresh observation window per round
         await self.update_instructions(self._instructions_for(round_id))
         hint = self._round_def(round_id).transition_hint
-        await session.generate_reply(
-            instructions=f"You are now in the '{round_id}' round. Transition naturally in one "
-            f"or two spoken sentences. {hint}"
-        )
+        async with self._reply_lock:
+            await session.generate_reply(
+                instructions=f"You are now in the '{round_id}' round. Transition naturally in one "
+                f"or two spoken sentences. {hint}"
+            )
 
     # ── pipeline hooks ───────────────────────────────────────────────
 
@@ -477,6 +482,62 @@ async def interview_session(ctx: agents.JobContext) -> None:
     )
     backend = BackendClient()
     tracker = LatencyTracker()
+
+    # ── double-voice guard: at most one agent per session (redis lock) ─
+    # A reconnect token that still carries a dispatch, or a StrictMode
+    # double-mount, would otherwise spawn a second Job in the same room;
+    # the candidate then hears two TTS streams. The DB flag in
+    # issue_room_token prevents most dispatches; this lock is the
+    # definitive in-room guard and also handles the crash-recovery window.
+    _agent_lock_key: str | None = f"agent:session:{session_id}" if session_id else None
+    _agent_lock_r = None
+    _agent_lock_held = False
+    if _agent_lock_key:
+        try:
+            import redis as _redis
+
+            _agent_lock_r = _redis.Redis.from_url(
+                os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                socket_timeout=2,
+                socket_connect_timeout=2,
+            )
+            # NX = only the first agent for this session acquires; ex keeps
+            # crash-recovery possible (lock expires after the interview).
+            if not _agent_lock_r.set(_agent_lock_key, "1", nx=True, ex=1800):
+                # Give the room a moment to sync remote_participants so we
+                # can distinguish "lock held by live agent" vs stale lock.
+                await asyncio.sleep(0.6)
+                has_other = any(
+                    p.identity != f"candidate-{session_id}"
+                    for p in ctx.room.remote_participants.values()
+                )
+                # If the room already has a non-candidate participant, the
+                # lock is genuinely held by a live agent — refuse this job.
+                # Otherwise the lock is stale (crashed agent without cleanup)
+                # and we steal it so the candidate is not stranded without voice.
+                if has_other or len(ctx.room.remote_participants) > 0:
+                    log.warning(
+                        "duplicate agent for session %s - lock held and room occupied, shutting down",  # noqa: E501
+                        session_id,
+                    )
+                    try:
+                        _agent_lock_r.close()
+                    except Exception:
+                        pass
+                    await backend.close()
+                    ctx.shutdown(reason="duplicate agent - session already has an interviewer")
+                    return
+                # Stale lock — reclaim
+                _agent_lock_r.delete(_agent_lock_key)
+                _agent_lock_r.set(_agent_lock_key, "1", nx=True, ex=1800)
+                _agent_lock_held = True
+            else:
+                _agent_lock_held = True
+        except Exception as exc:
+            log.warning(  # noqa: E501
+                "agent lock check failed for %s: %s - proceeding without lock", session_id, exc
+            )
+            _agent_lock_held = False
 
     plan_data = DEFAULT_PLAN
     round_meta: dict[str, dict] = {}
@@ -734,30 +795,33 @@ async def interview_session(ctx: agents.JobContext) -> None:
                 has_twist=bool(twist_text),
             ):
                 conductor.fold("twist_injected", {"round_id": rid})
-                await session.generate_reply(
-                    instructions="Their solution passes the visible tests with time to spare. "
-                    f"Introduce this requirement change conversationally: {twist_text}"
-                )
+                async with conductor._reply_lock:
+                    await session.generate_reply(
+                        instructions="Their solution passes the visible tests with time to spare. "
+                        f"Introduce this requirement change conversationally: {twist_text}"
+                    )
                 continue
             # Think-aloud nudge: silent coding >90s, max 2 per round
             if conductor.in_code_round() and conductor.sm.should_nudge(
                 conductor.es, _now(), editing=conductor.recent_editing
             ):
                 conductor._pending_nudge = True
-                await session.generate_reply(
-                    instructions="The candidate has been coding silently for a while. Give one "
-                    "gentle, short invitation to walk you through their thinking. Do not "
-                    "pressure them."
-                )
+                async with conductor._reply_lock:
+                    await session.generate_reply(
+                        instructions="The candidate has been coding silently for a while. Give one "
+                        "gentle, short invitation to walk you through their thinking. Do not "
+                        "pressure them."
+                    )
                 continue
             target = conductor.sm.should_transition(conductor.es, _now())
             if target is not None:
                 await conductor.transition_to(target, session)
                 if target == ENDED:
-                    await session.generate_reply(
-                        instructions="Close the interview warmly in one or two sentences: thank "
-                        "them, tell them the team will follow up. intent wrapup."
-                    )
+                    async with conductor._reply_lock:
+                        await session.generate_reply(
+                            instructions="Close the interview warmly in one or two sentences: thank "  # noqa: E501
+                            "them, tell them the team will follow up. intent wrapup."
+                        )
                     await asyncio.sleep(8)
                     if session_id:
                         await backend.set_status(session_id, "completed")
@@ -918,13 +982,14 @@ async def interview_session(ctx: agents.JobContext) -> None:
     t1 = asyncio.create_task(_supervise("transition_loop", transition_loop))
     t2 = asyncio.create_task(_supervise("observation_loop", observation_loop))
 
-    await session.generate_reply(
-        instructions="Greet the candidate warmly, confirm they can hear you, and set expectations "
-        "for the interview in one or two sentences."
-        if fresh_session
-        else f"You are resuming after a brief connection drop, mid-'{initial.round_id}' round. "
-        "Apologize briefly for the glitch and pick the conversation back up."
-    )
+    async with conductor._reply_lock:
+        await session.generate_reply(
+            instructions="Greet the candidate warmly, confirm they can hear you, and set expectations "  # noqa: E501
+            "for the interview in one or two sentences."
+            if fresh_session
+            else f"You are resuming after a brief connection drop, mid-'{initial.round_id}' round. "
+            "Apologize briefly for the glitch and pick the conversation back up."
+        )
 
     async def on_shutdown() -> None:
         for t in (t1, t2):
@@ -937,6 +1002,19 @@ async def interview_session(ctx: agents.JobContext) -> None:
             sink.emit("turn_latency", {"summary": True, **summary})
             await sink.close()
         await backend.close()
+        # Release the per-session agent lock so a future redispatch (e.g.
+        # after a crash) can acquire it. Best-effort — expiry also handles it.
+        if _agent_lock_held and _agent_lock_r is not None and _agent_lock_key:
+            try:
+                _agent_lock_r.delete(_agent_lock_key)
+                _agent_lock_r.close()
+            except Exception:
+                pass
+        elif _agent_lock_r is not None:
+            try:
+                _agent_lock_r.close()
+            except Exception:
+                pass
 
     ctx.add_shutdown_callback(on_shutdown)
 
