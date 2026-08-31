@@ -345,26 +345,73 @@ def issue_room_token(
         # re-dispatch, no resumed context. The portal routes to /next.
         raise HTTPException(409, "this interview has ended")
 
+    # Serialize concurrent token requests for the same session (StrictMode
+    # double-mount, reconnect double-click). Without this two requests both
+    # see agent_dispatched_at==NULL and both attach a dispatch.
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"livekit_dispatch:{session_id}"})
+    # Re-fetch inside the lock so we see the winner's write.
+    session = db.get(Session, session_id)
+    if session is None:
+        raise HTTPException(404, "session not found")
+
     room = session.livekit_room or f"interview-{session_id}"
     if session.livekit_room != room:
         session.livekit_room = room
         db.commit()
+        # re-fetch after commit to keep the lock's snapshot consistent
+        session = db.get(Session, session_id)
+        if session is None:
+            raise HTTPException(404, "session not found")
+
+    # Only the FIRST token for a session ever carries an explicit agent
+    # dispatch. Every later token (reconnect, StrictMode remount, tab
+    # duplicate) rejoins the existing room — a second dispatch creates a
+    # second agent participant and the candidate hears two voices.
+    # agent_dispatched_at is the idempotency guard. Short-TTL redispatch
+    # handles the crash-recovery case where the dispatched agent never
+    # arrived or died: if the dispatch is >90s old and no agent_turn has
+    # appeared in that window, allow one more dispatch attempt.
+    now = datetime.now(UTC)
+    should_dispatch = session.agent_dispatched_at is None
+    if not should_dispatch and session.agent_dispatched_at is not None:
+        age_s = (now - session.agent_dispatched_at).total_seconds()
+        # Crash/never-arrived recovery: the dispatched agent should flip the
+        # session to in_progress and emit an agent_turn greeting within ~15s.
+        # If 90s pass with neither, the dispatch was lost and a reconnect
+        # should be allowed to try again — without this, a failed dispatch
+        # would strand the candidate with no voice.
+        if age_s > 90 and session.status == "created":
+            recent_agent_turn = db.scalar(
+                select(InterviewEvent.id)
+                .where(
+                    InterviewEvent.session_id == session_id,
+                    InterviewEvent.type == "agent_turn",
+                    InterviewEvent.ts > session.agent_dispatched_at,
+                )
+                .limit(1)
+            )
+            if recent_agent_turn is None:
+                should_dispatch = True
+    if should_dispatch:
+        session.agent_dispatched_at = now
+        db.commit()
 
     settings = get_settings()
-    token = (
+    at = (
         lk_api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
         .with_identity(f"candidate-{session_id}")
         .with_name(session.candidate_label)
         .with_grants(lk_api.VideoGrants(room_join=True, room=room))
+    )
+    if should_dispatch:
         # Explicit agent dispatch: the room requests the named interviewer
         # worker on creation (deterministic; replaces automatic dispatch).
-        .with_room_config(
+        at = at.with_room_config(
             lk_api.RoomConfiguration(
                 agents=[lk_api.RoomAgentDispatch(agent_name="interviewer")]
             )
         )
-        .to_jwt()
-    )
+    token = at.to_jwt()
     return {"token": token, "url": settings.livekit_public_url or settings.livekit_url, "room": room}
 
 

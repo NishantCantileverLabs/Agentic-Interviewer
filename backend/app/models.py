@@ -129,6 +129,11 @@ class Session(Base):
     pipeline_round_index: Mapped[int | None] = mapped_column(Integer)
     # candidate's TTS voice pick (Aura-2 model id); NULL = platform default
     voice: Mapped[str | None] = mapped_column(Text)
+    # idempotency guard for LiveKit explicit dispatch (double-voice fix):
+    # first token for a session carries RoomConfiguration(agents=[interviewer]),
+    # subsequent reconnect tokens must not — otherwise a second Job is
+    # dispatched into the same room and the candidate hears two interviewers.
+    agent_dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
