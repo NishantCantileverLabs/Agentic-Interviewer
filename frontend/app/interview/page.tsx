@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { LiveKitRoom } from "@livekit/components-react";
@@ -72,7 +72,10 @@ export default function InterviewPage() {
     else setError(`could not read ${file.name}`);
   };
 
+  const startGuard = useRef(false);
   const start = useCallback(async () => {
+    if (startGuard.current) return;
+    startGuard.current = true;
     setStarting(true);
     setError(null);
     try {
@@ -95,6 +98,7 @@ export default function InterviewPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setStarting(false);
+      startGuard.current = false;
     }
   }, []);
 
@@ -126,13 +130,20 @@ export default function InterviewPage() {
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
 
+  const reconnectingRef = useRef(false);
   const reconnectVoice = useCallback(async () => {
-    if (!sessionId) return;
-    setCreds(null);
+    if (!sessionId || reconnectingRef.current) return;
+    reconnectingRef.current = true;
     try {
-      setCreds(await getToken(sessionId));
+      // Fetch first, then swap — the old teardown (setCreds(null)) used to
+      // unmount LiveKitRoom before the new token arrived, creating a window
+      // where StrictMode or a second click could issue a duplicate dispatch.
+      const next = await getToken(sessionId);
+      setCreds(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      reconnectingRef.current = false;
     }
   }, [sessionId]);
 

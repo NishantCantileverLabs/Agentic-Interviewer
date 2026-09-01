@@ -43,11 +43,23 @@ export default function RoomPage() {
   const [error, setError] = useState<string | null>(null);
 
   // ── bootstrap: room credentials + current round content ─────────
+  // Guard against StrictMode double-invoke and concurrent reconnect
+  // clicks: the old code fired two getToken() in parallel, each
+  // carrying RoomConfiguration(agents=[interviewer]) → two agents.
+  // Now the backend token is idempotent but we still de-duplicate on
+  // the client so we don't churn the LiveKitRoom mount.
+  const connectingRef = useRef(false);
+  const bootstrappedRef = useRef(false);
   const connect = useCallback(async () => {
-    if (!sessionId) return;
+    if (!sessionId || connectingRef.current) return;
+    // Don't fetch a second token if we already have one — a reconnect
+    // should reuse the existing grant unless we are in dropped state.
+    if (creds && !dropped) return;
+    connectingRef.current = true;
     setError(null);
     try {
-      setCreds(await getToken(sessionId));
+      const next = await getToken(sessionId);
+      setCreds(next);
       setDropped(false);
     } catch (e) {
       // a finished interview refuses room tokens (409): route to the
@@ -62,12 +74,15 @@ export default function RoomPage() {
         /* fall through to the generic error */
       }
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      connectingRef.current = false;
     }
-  }, [sessionId, router, token]);
+  }, [sessionId, router, token, creds, dropped]);
 
   useEffect(() => {
+    if (!sessionId || bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
     void connect();
-    if (!sessionId) return;
     void getQuestion(sessionId).then(setQuestion).catch(() => undefined);
     // the first paint must already show the right tool for the current round
     void fetch(apiUrl(`/sessions/${sessionId}/tools`))

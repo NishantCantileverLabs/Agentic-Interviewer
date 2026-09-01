@@ -7,6 +7,7 @@ COPY app ./app
 COPY providers ./providers
 COPY alembic ./alembic
 COPY alembic.ini ./
+COPY scripts ./scripts
 
 RUN pip install --no-cache-dir .
 

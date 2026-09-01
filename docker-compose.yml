@@ -83,6 +83,7 @@ services:
       JUDGE0_URL: http://judge0:2358
       JUDGE0_AUTH_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
       LIVEKIT_URL: ${LIVEKIT_URL:-ws://livekit:7880}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
@@ -95,6 +96,8 @@ services:
       CANDIDATE_LINK_SECRET: ${CANDIDATE_LINK_SECRET:-dev-candidate-secret-change-me}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
       DEV_DEFAULT_ORG: ${DEV_DEFAULT_ORG:-false}
+    volumes:
+      - ./prompts:/srv/prompts:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -102,7 +105,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "alembic upgrade head && python scripts/sync_prompts.py /srv/prompts && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s
@@ -171,9 +174,7 @@ services:
   # T3: Yjs CRDT sync server for the collaborative editor
   y-websocket:
     restart: unless-stopped
-    image: node:20-alpine
-    # v2+ dropped the bundled server binary; v1's server speaks the same sync protocol
-    command: sh -c "npx -y y-websocket@1"
+    build: ./y-websocket-server
     environment:
       HOST: 0.0.0.0
       PORT: 1234
@@ -185,13 +186,23 @@ services:
   judge0:
     restart: unless-stopped
     profiles: ["sandbox"]
-    image: judge0/judge0:1.13.1
+    image: judge0/judge0:latest
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
+    tmpfs:
+      - /box:size=100M
+      - /tmp:size=100M
+      - /sys/fs/cgroup/memory:size=100M
+      - /sys/fs/cgroup/cpuacct:size=100M
+      - /sys/fs/cgroup/blkio:size=100M
+      - /sys/fs/cgroup/pids:size=100M
     environment:
       # empty disables AUTHN (dev); production posture requires it set
       AUTHN_HEADER: X-Auth-Token
       AUTHN_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
+      ENABLE_CGROUPS: "false"
+      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: "true"
+      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: "true"
     ports:
       # loopback only — the API container reaches it on the compose network;
       # a privileged code-execution service must never face the LAN
@@ -210,10 +221,21 @@ services:
   judge0-workers:
     restart: unless-stopped
     profiles: ["sandbox"]
-    image: judge0/judge0:1.13.1
+    image: judge0/judge0:latest
     command: ["./scripts/workers"]
     volumes:
       - ./infra/judge0/judge0.conf:/judge0.conf:ro
+    tmpfs:
+      - /box:size=100M
+      - /tmp:size=100M
+      - /sys/fs/cgroup/memory:size=100M
+      - /sys/fs/cgroup/cpuacct:size=100M
+      - /sys/fs/cgroup/blkio:size=100M
+      - /sys/fs/cgroup/pids:size=100M
+    environment:
+      ENABLE_CGROUPS: "false"
+      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: "true"
+      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: "true"
     privileged: true
     depends_on:
       - judge0-db
@@ -261,6 +283,8 @@ services:
       TURN_DETECTOR: ${TURN_DETECTOR:-stt}
       DEEPGRAM_ENDPOINTING_MS: ${DEEPGRAM_ENDPOINTING_MS:-500}
       ENVIRONMENT: ${ENVIRONMENT:-dev}
+    volumes:
+      - ./prompts:/prompts:ro
     depends_on:
       livekit:
         condition: service_started
@@ -287,3 +311,8 @@ volumes:
   pgdata:
   minio-data:
   judge0-pgdata:
+
+networks:
+  default:
+    name: process
+    external: true
