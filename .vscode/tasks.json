@@ -1,0 +1,59 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // --wait blocks until every container reports healthy, so the agent and
+      // frontend never start against a Postgres/LiveKit that isn't up yet.
+      // --build rebuilds the api image: backend code is baked in, NOT mounted,
+      // so a code change that isn't rebuilt simply won't be running.
+      "label": "1 · infra (docker)",
+      "type": "shell",
+      "command": "docker compose --profile sandbox up -d --build --wait",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "2 · voice agent",
+      "type": "shell",
+      "command": "& .\\.venv\\Scripts\\python.exe interview_agent.py dev",
+      "options": { "cwd": "${workspaceFolder}\\agent" },
+      "dependsOn": ["1 · infra (docker)"],
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "3 · frontend",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}\\frontend" },
+      "dependsOn": ["1 · infra (docker)"],
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "▶ run everything",
+      "dependsOn": ["2 · voice agent", "3 · frontend"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "■ stop everything",
+      "type": "shell",
+      "command": "docker compose --profile sandbox down; Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | Where-Object { $_.CommandLine -match 'interview_agent' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "✓ verify (all suites)",
+      "type": "shell",
+      "command": "python scripts/test_tenancy.py; python scripts/smoke.py; python scripts/smoke_exec.py; cd ..; python tests/e2e/mock_session.py; python tests/e2e/phase23_flow.py; docker compose exec -T api python -m pytest tests -q",
+      "options": { "cwd": "${workspaceFolder}\\backend" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    }
+  ]
+}
